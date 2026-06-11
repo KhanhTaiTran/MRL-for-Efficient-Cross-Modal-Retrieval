@@ -1,0 +1,66 @@
+version: "3.9"
+
+networks:
+  mrl-network:
+    driver: bridge
+
+services:
+  # ─────────────────────────────────────────
+  # RabbitMQ — message broker
+  # ─────────────────────────────────────────
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672" # AMQP protocol
+      - "15672:15672" # Management UI  →  http://localhost:15672
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mrl-network
+
+  # ─────────────────────────────────────────
+  # Core API — Golang / Gin REST gateway
+  # ─────────────────────────────────────────
+  core-api:
+    build:
+      context: ./core-api
+      dockerfile: Dockerfile
+    container_name: core-api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      RABBITMQ_QUEUE: image_search_queue
+      PORT: 8080
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - mrl-network
+
+  # ─────────────────────────────────────────
+  # AI Worker — Python / Pika consumer
+  # ─────────────────────────────────────────
+  ai-worker:
+    build:
+      context: ./ai-worker
+      dockerfile: Dockerfile
+    container_name: ai-worker
+    restart: unless-stopped
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      RABBITMQ_QUEUE: image_search_queue
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - mrl-network
