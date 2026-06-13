@@ -3,12 +3,15 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"time"
 
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -105,82 +108,107 @@ func generateTaskID() string {
 	return time.Now().Format("20060102150405.000000000")
 }
 
+func failOnError(err error, msg string) {
+	if err != nil {
+		log.Panicf("%s: %s", msg, err)
+	}
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 func main() {
-	rabbitURL := mustEnv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
-	queueName := mustEnv("RABBITMQ_QUEUE", "image_search_queue")
-	port := mustEnv("PORT", "8080")
+	// Connect to RabbitMQ
+	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
+	failOnError(err, "Can't connect to RabbitMQ")
+	defer conn.Close()
 
-	// Retry connecting to RabbitMQ — it may not be ready immediately.
-	var pub *Publisher
-	for attempts := 1; attempts <= 10; attempts++ {
-		var err error
-		pub, err = NewPublisher(rabbitURL, queueName)
-		if err == nil {
-			log.Printf("[core-api] Connected to RabbitMQ (attempt %d)", attempts)
-			break
-		}
-		log.Printf("[core-api] RabbitMQ not ready (attempt %d/10): %v — retrying in 3s", attempts, err)
-		time.Sleep(3 * time.Second)
-	}
-	if pub == nil {
-		log.Fatal("[core-api] Could not connect to RabbitMQ after 10 attempts — exiting")
-	}
-	defer pub.Close()
+	ch, err := conn.Channel()
+	failOnError(err, "Can't open channel")
+	defer ch.Close()
 
-	// ── Router ────────────────────────────────────────────────────────────────
+	// declare a temporary reply queue for receiving results from Python
+	q, err := ch.QueueDeclare(
+		"",    // name (empty = auto-generate a unique name)
+		false, // durable
+		false, // delete when unused
+		true,  // exclusive (only this connection can consume)
+		false, // noWait
+		nil,   // arguments
+	)
+	failOnError(err, "Can't declare reply queue")
+
+	msgs, err := ch.Consume(
+		q.Name, // queue
+		"",     // consumer
+		true,   // auto-ack
+		false,  // exclusive
+		false,  // no-local
+		false,  // no-wait
+		nil,    // args
+	)
+	failOnError(err, "Can't register consumer")
+
+	// Set up Gin server with CORS
 	r := gin.Default()
 
-	// Health probe (used by load-balancers / Docker health-checks)
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok"})
-	})
+	// Allow CORS from frontend (adjust origin as needed)
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"http://localhost:3000"}, // allow frontend origin
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
 
-	// POST /api/upload-image
-	// Accepts a JSON body with { "image_base64": "...", "mrl_dimension": 64 }
-	// Publishes a SearchTask message to the image_search_queue.
-	r.POST("/api/upload-image", func(c *gin.Context) {
-		var req UploadRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error":   "invalid request body",
-				"details": err.Error(),
-			})
+	r.POST("/api/search", func(c *gin.Context) {
+		// Lấy file ảnh từ request
+		file, _, err := c.Request.FormFile("image")
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Please upload an image with key 'image'"})
+			return
+		}
+		defer file.Close()
+
+		// img -> bytes
+		imageBytes, err := io.ReadAll(file)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Cannot read image file"})
 			return
 		}
 
-		task := SearchTask{
-			TaskID:       generateTaskID(),
-			ImageBase64:  req.ImageBase64,
-			MRLDimension: req.MRLDimension,
-			EnqueuedAt:   time.Now().UTC(),
-		}
+		// create a unique correlation ID for this request
+		corrId := uuid.New().String()
 
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+		// Publish img + MRL dimension to RabbitMQ
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 
-		if err := pub.Publish(ctx, task); err != nil {
-			log.Printf("[core-api] Failed to publish task %s: %v", task.TaskID, err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "failed to enqueue image search task",
+		err = ch.PublishWithContext(ctx,
+			"",             // exchange
+			"search_queue", // routing key (queue name)
+			false,          // mandatory
+			false,          // immediate
+			amqp.Publishing{
+				ContentType:   "image/jpeg",
+				CorrelationId: corrId,
+				ReplyTo:       q.Name, // Notify Python to send the result back to this queue
+				Body:          imageBytes,
 			})
-			return
+		failOnError(err, "Error publishing message")
+
+		// Wait for the result from Python
+		for d := range msgs {
+			if corrId == d.CorrelationId {
+				// Receive the result matching the request ID
+				c.Data(http.StatusOK, "application/json", d.Body)
+				return
+			}
 		}
 
-		log.Printf("[core-api] Task %s enqueued → queue=%s dim=%d",
-			task.TaskID, queueName, task.MRLDimension)
-
-		c.JSON(http.StatusAccepted, gin.H{
-			"message":       "Image search task accepted",
-			"task_id":       task.TaskID,
-			"mrl_dimension": task.MRLDimension,
-			"queue":         queueName,
-		})
+		c.JSON(http.StatusRequestTimeout, gin.H{"error": "Timed out waiting for search results"})
 	})
 
-	log.Printf("[core-api] Listening on :%s", port)
-	if err := r.Run(":" + port); err != nil {
-		log.Fatalf("[core-api] Server error: %v", err)
-	}
+	log.Println("Core API is running at http://localhost:8080")
+	r.Run(":8080")
 }

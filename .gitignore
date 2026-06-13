@@ -1,0 +1,5 @@
+/.agents
+/.cursor
+
+# Ignore the skills lock file
+/skills-lock.json

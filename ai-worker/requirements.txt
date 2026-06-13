@@ -4,3 +4,5 @@ torchvision
 Pillow
 fastapi
 uvicorn
+faiss-cpu
+numpy

@@ -8,8 +8,9 @@ from mrl_model import DEFAULT_TARGET_DIM, extract_embedding_from_image
 from PIL import Image, ImageDraw
 
 
+# simple smoke test to verify the MRL checkpoint can be loaded and produces a 64-dim embedding from an image
 def create_demo_image(path: Path) -> Path:
-    image = Image.new("RGB", (256, 256), color=(24, 44, 72))
+    image = Image.new("RGB", (256, 256), color=(24, 44, 72)) 
     draw = ImageDraw.Draw(image)
     draw.rectangle((32, 32, 224, 224), outline=(255, 195, 0), width=8)
     draw.text((64, 112), "MRL", fill=(255, 255, 255))

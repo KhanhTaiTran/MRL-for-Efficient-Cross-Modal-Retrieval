@@ -1,127 +1,124 @@
+import io
 import json
-import logging
 import os
-from io import BytesIO
 
+import faiss
+import numpy as np
 import pika
-from mrl_model import extract_embedding_from_bytes
-from pika.exceptions import AMQPConnectionError
+import torch
+import torchvision.models as models
+# import MRL of paper
+from MRL import MRL_Linear_Layer
 from PIL import Image
+from torchvision import transforms
 
-# ─── Logging ──────────────────────────────────────────────────────────────────
+# --- Configuration ---
+RABBITMQ_HOST = 'localhost' 
+WEIGHT_PATH = "mrl-model/resnet18_mrl_cifar100.pt"
+MOCK_DATA_DIR = "mock_data"
+DIMENSION = 64  #use the 64-dim output from MRL as default for retrieval
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(message)s",
-    datefmt="%Y-%m-%dT%H:%M:%S",
-)
-log = logging.getLogger("ai-worker")
+# ---Initialization---
+def setup_system():
+    print("[1] Loading MRL ResNet18 model...")
+    device = torch.device("cpu")
+    model = models.resnet18(weights=None)
+    
+    #load weights 
+    nesting_list = [8, 16, 32, 64, 128, 256, 512]
+    model.fc = MRL_Linear_Layer(nesting_list, num_classes=100, efficient=False)
+    model.load_state_dict(torch.load(WEIGHT_PATH, map_location=device))
 
-# ─── Config ───────────────────────────────────────────────────────────────────
+    model.fc = torch.nn.Identity() # We only want the embedding, not the classification output
+    model.eval()
+    
 
-RABBITMQ_URL: str = os.getenv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/")
-QUEUE_NAME: str = os.getenv("RABBITMQ_QUEUE", "image_search_queue")
+    print("[2] Initializing FAISS Index and Mock DB...")
+    index = faiss.IndexFlatL2(DIMENSION)
+    product_mapping = {} # mapping from FAISS index to product info (here we just use file names as product IDs)
+    
+    transform = transforms.Compose([
+        transforms.Resize((32, 32)), # Resize to CIFAR-100 size
+        transforms.ToTensor(),
+        transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)),
+    ])
 
-# Full embedding dimensionality produced by the backbone model.
-# MRL allows us to *truncate* this to any smaller power-of-2 dimension.
-FULL_EMBEDDING_DIM: int = 768
+    # Scan mock_data directory, embed images using MRL, and add to FAISS index
+    if os.path.exists(MOCK_DATA_DIR):
+        img_files = [f for f in os.listdir(MOCK_DATA_DIR) if f.endswith(('.png', '.jpg', '.jpeg'))]
+        for i, file_name in enumerate(img_files):
+            img_path = os.path.join(MOCK_DATA_DIR, file_name)
+            img = Image.open(img_path).convert('RGB')
+            img_tensor = transform(img).unsqueeze(0)
+            
+            with torch.no_grad():
+                features_512 = model(img_tensor)
+                vector_64 = features_512[:, :DIMENSION].numpy().astype(np.float32)
+            
+            faiss.normalize_L2(vector_64) # Normalize vector for more accurate search
+            index.add(vector_64)
+            product_mapping[i] = file_name # File name is used as Product ID
+            
+        print(f"    -> embedded {index.ntotal} products into FAISS.")
+    else:
+        print("    -> WARNING: mock_data directory not found. Please create and add images.")
 
+    return model, transform, index, product_mapping
 
-# ─── Message Handler ──────────────────────────────────────────────────────────
+model, transform, index, product_mapping = setup_system()
 
-def on_message(channel, method, properties, body: bytes) -> None:
-    """Callback invoked for every message delivered from the queue."""
+# --- Process Query Image ---
+def process_query_image(image_bytes):
+    img = Image.open(io.BytesIO(image_bytes)).convert('RGB')
+    img_tensor = transform(img).unsqueeze(0)
+    
+    with torch.no_grad():
+        features_512 = model(img_tensor)
+        query_vector = features_512[:, :DIMENSION].numpy().astype(np.float32)
+        
+    faiss.normalize_L2(query_vector)
+    
+    # Find top 3 nearest neighbors in FAISS index
+    distances, indices = index.search(query_vector, k=3)
+    
+    results = []
+    for i in range(len(indices[0])):
+        idx = indices[0][i]
+        if idx != -1:
+            results.append({
+                "product_id": product_mapping.get(idx, "unknown"),
+                "distance": float(distances[0][i])
+            })
+    return results
+
+# --- Listen for RabbitMQ Messages ---
+def on_request(ch, method, props, body):
+    print(f"\n[x] Received search request for image (Size: {len(body)} bytes)")
+    
     try:
-        payload = json.loads(body.decode())
-    except json.JSONDecodeError as exc:
-        log.error("[AI Worker] Malformed message — could not parse JSON: %s", exc)
-        # Reject without re-queue so the bad message doesn't loop forever.
-        channel.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
-        return
+        # Receive image as bytes from Go, process it
+        top_results = process_query_image(body)
+        response = json.dumps({"status": "success", "data": top_results})
+    except Exception as e:
+        print("Error processing image:", str(e))
+        response = json.dumps({"status": "error", "message": str(e)})
 
-    task_id: str = payload.get("task_id", "unknown")
-    mrl_dim: int = int(payload.get("mrl_dimension", 64))
-    image_b64: str = payload.get("image_base64", "")
-
-    log.info(
-        "[AI Worker] Received image task  task_id=%s  dim=%d",
-        task_id,
-        mrl_dim,
+    # Send result back to Go in the queue (Reply_To)
+    ch.basic_publish(
+        exchange='',
+        routing_key=props.reply_to,
+        properties=pika.BasicProperties(correlation_id=props.correlation_id),
+        body=response
     )
-    log.info(
-        "[AI Worker] Extracting %d-dim vector using MRL…",
-        mrl_dim,
-    )
+    ch.basic_ack(delivery_tag=method.delivery_tag)
+    print(" [v] Sent results back to Core API.")
 
-    try:
-        embedding = extract_embedding_from_bytes(image_b64, target_dim=mrl_dim)
-    except Exception as exc:
-        log.exception("[AI Worker] Failed to extract embedding for task_id=%s", task_id)
-        channel.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
-        return
+connection = pika.BlockingConnection(pika.ConnectionParameters(host=RABBITMQ_HOST))
+channel = connection.channel()
+channel.queue_declare(queue='search_queue')
 
-    log.info("[AI Worker] Done  task_id=%s  embedding_shape=%s  norm=%.4f", task_id, list(embedding.shape), embedding.norm().item())
+channel.basic_qos(prefetch_count=1)
+channel.basic_consume(queue='search_queue', on_message_callback=on_request)
 
-    # In a real pipeline you would:
-    #   • Store the embedding in a vector DB (e.g. Qdrant, Weaviate, pgvector).
-    #   • Publish results to a reply queue or update a DB row.
-
-    # Acknowledge → message removed from queue.
-    channel.basic_ack(delivery_tag=method.delivery_tag)
-
-
-# ─── RabbitMQ Connection with Retry ───────────────────────────────────────────
-
-def connect_with_retry(url: str, max_attempts: int = 10) -> pika.BlockingConnection:
-    params = pika.URLParameters(url)
-    params.heartbeat = 60
-    params.blocked_connection_timeout = 300
-
-    for attempt in range(1, max_attempts + 1):
-        try:
-            conn = pika.BlockingConnection(params)
-            log.info("[AI Worker] Connected to RabbitMQ (attempt %d)", attempt)
-            return conn
-        except AMQPConnectionError as exc:
-            log.warning(
-                "[AI Worker] RabbitMQ not ready (attempt %d/%d): %s — retrying in 3 s",
-                attempt,
-                max_attempts,
-                exc,
-            )
-    raise RuntimeError("Could not connect to RabbitMQ after %d attempts" % max_attempts)
-
-
-# ─── Entry Point ──────────────────────────────────────────────────────────────
-
-def main() -> None:
-    log.info("[AI Worker] Starting — queue=%s", QUEUE_NAME)
-
-    connection = connect_with_retry(RABBITMQ_URL)
-    channel = connection.channel()
-
-    # Declare the queue (idempotent — safe if core-api already declared it).
-    channel.queue_declare(queue=QUEUE_NAME, durable=True)
-
-    # Process one message at a time so we don't overload the worker.
-    channel.basic_qos(prefetch_count=1)
-
-    channel.basic_consume(
-        queue=QUEUE_NAME,
-        on_message_callback=on_message,
-        auto_ack=False,   # manual ack for reliability
-    )
-
-    log.info("[AI Worker] Waiting for messages on '%s'. CTRL+C to exit.", QUEUE_NAME)
-    try:
-        channel.start_consuming()
-    except KeyboardInterrupt:
-        log.info("[AI Worker] Shutting down…")
-        channel.stop_consuming()
-    finally:
-        if connection.is_open:
-            connection.close()
-
-
-if __name__ == "__main__":
-    main()
+print(" [*] AI Worker is waiting for requests. Press CTRL+C to exit.")
+channel.start_consuming()
