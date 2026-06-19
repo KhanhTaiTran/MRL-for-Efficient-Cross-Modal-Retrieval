@@ -3,3 +3,6 @@
 
 # Ignore the skills lock file
 /skills-lock.json
+
+# ignore the nodemodule folder 
+/node_modules
