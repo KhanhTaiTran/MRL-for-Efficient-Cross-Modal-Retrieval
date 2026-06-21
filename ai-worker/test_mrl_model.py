@@ -4,7 +4,7 @@ import argparse
 import tempfile
 from pathlib import Path
 
-from mrl_model import DEFAULT_TARGET_DIM, extract_embedding_from_image
+from model import DEFAULT_TARGET_DIM, extract_embedding_from_image
 from PIL import Image, ImageDraw
 
 

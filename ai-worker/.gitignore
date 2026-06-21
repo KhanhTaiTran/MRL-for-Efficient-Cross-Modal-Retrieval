@@ -1,1 +1,6 @@
 data/
+
+checkpoints/
+embeddings/
+venv/ 
+__pycache__
