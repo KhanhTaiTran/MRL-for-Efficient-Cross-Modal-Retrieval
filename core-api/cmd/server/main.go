@@ -61,6 +61,7 @@ func main() {
 	)
 	failOnError(err, "Can't register consumer")
 
+	// Router and CORS Config
 	r := gin.Default()
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"http://localhost:3000"},
@@ -71,7 +72,65 @@ func main() {
 		MaxAge:           12 * time.Hour,
 	}))
 
-	r.POST("/api/search", func(c *gin.Context) {
+	// static file server (using for display the images from other directory)
+	r.Static("/images", "D:/Pre-thesis/Thesis Dataset-20260617T002927Z-3-002/Thesis Dataset/data_images")
+
+	// Helper function for common RabbitMQ Publish & Wait logic
+	publishAndWait := func(c *gin.Context, body []byte, contentType string, searchType string, mrlDimension int, requestStartedAt time.Time) {
+		corrID := uuid.New().String()
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second) // Increased timeout for 22k search
+		defer cancel()
+
+		err = ch.PublishWithContext(ctx,
+			"",
+			"search_queue",
+			false,
+			false,
+			amqp.Publishing{
+				ContentType:   contentType,
+				CorrelationId: corrID,
+				ReplyTo:       q.Name,
+				Headers: amqp.Table{
+					"mrl_dimension": int32(mrlDimension),
+					"search_type":   searchType,
+				},
+				Body: body,
+			},
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error publishing message to worker"})
+			return
+		}
+
+		for d := range msgs {
+			if d.CorrelationId != corrID {
+				continue
+			}
+
+			var payload map[string]any
+			if err := json.Unmarshal(d.Body, &payload); err != nil {
+				c.Data(http.StatusOK, "application/json", d.Body)
+				return
+			}
+
+			payload["mrl_dimension"] = mrlDimension
+			payload["request_latency_ms"] = time.Since(requestStartedAt).Milliseconds()
+
+			responseBody, err := json.Marshal(payload)
+			if err != nil {
+				c.Data(http.StatusOK, "application/json", d.Body)
+				return
+			}
+
+			c.Data(http.StatusOK, "application/json", responseBody)
+			return
+		}
+
+		c.JSON(http.StatusRequestTimeout, gin.H{"error": "Timed out waiting for search results from worker"})
+	}
+
+	// 1. Image-to-Image Search API
+	r.POST("/api/search/image", func(c *gin.Context) {
 		requestStartedAt := time.Now()
 
 		file, _, err := c.Request.FormFile("image")
@@ -98,52 +157,32 @@ func main() {
 			return
 		}
 
-		corrID := uuid.New().String()
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
+		publishAndWait(c, imageBytes, "image/jpeg", "image", mrlDimension, requestStartedAt)
+	})
 
-		err = ch.PublishWithContext(ctx,
-			"",
-			"search_queue",
-			false,
-			false,
-			amqp.Publishing{
-				ContentType:   "image/jpeg",
-				CorrelationId: corrID,
-				ReplyTo:       q.Name,
-				Headers: amqp.Table{
-					"mrl_dimension": int32(mrlDimension),
-				},
-				Body: imageBytes,
-			},
-		)
-		failOnError(err, "Error publishing message")
+	// 2. Text-to-Image Search API
+	r.POST("/api/search/text", func(c *gin.Context) {
+		requestStartedAt := time.Now()
 
-		for d := range msgs {
-			if d.CorrelationId != corrID {
-				continue
-			}
-
-			var payload map[string]any
-			if err := json.Unmarshal(d.Body, &payload); err != nil {
-				c.Data(http.StatusOK, "application/json", d.Body)
-				return
-			}
-
-			payload["mrl_dimension"] = mrlDimension
-			payload["request_latency_ms"] = time.Since(requestStartedAt).Milliseconds()
-
-			body, err := json.Marshal(payload)
-			if err != nil {
-				c.Data(http.StatusOK, "application/json", d.Body)
-				return
-			}
-
-			c.Data(http.StatusOK, "application/json", body)
+		query := c.Request.FormValue("query")
+		if query == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Please provide a search text with key 'query'"})
 			return
 		}
 
-		c.JSON(http.StatusRequestTimeout, gin.H{"error": "Timed out waiting for search results"})
+		dimensionValue := c.Request.FormValue("mrl_dimension")
+		mrlDimension, err := strconv.Atoi(dimensionValue)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Please provide a valid mrl_dimension"})
+			return
+		}
+		if _, ok := supportedMRLDimensions[mrlDimension]; !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported mrl_dimension. Use 8, 16, 32, 64, 128, 256, or 512."})
+			return
+		}
+
+		textBytes := []byte(query)
+		publishAndWait(c, textBytes, "text/plain", "text", mrlDimension, requestStartedAt)
 	})
 
 	log.Println("Core API is running at http://localhost:8080")

@@ -1,4 +1,5 @@
 export default {
+  allowedDevOrigins: ["local-origin.dev", "*.local-origin.dev"],
   experimental: {
     ppr: true,
     inlineCss: true,
@@ -11,6 +12,11 @@ export default {
         protocol: "https",
         hostname: "cdn.shopify.com",
         pathname: "/s/files/**",
+      },
+      {
+        protocol: "https",
+        hostname: "images.unsplash.com",
+        pathname: "/**",
       },
     ],
   },
