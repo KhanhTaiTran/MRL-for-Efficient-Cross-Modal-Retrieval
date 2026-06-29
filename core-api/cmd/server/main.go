@@ -72,6 +72,13 @@ func main() {
 		MaxAge:           12 * time.Hour,
 	}))
 
+	// Add middleware to ensure Vary: Origin is always set to prevent browser caching issues
+	// where an <img> load caches the response without CORS headers, breaking subsequent fetch() calls.
+	r.Use(func(c *gin.Context) {
+		c.Header("Vary", "Origin")
+		c.Next()
+	})
+
 	// static file server (using for display the images from other directory)
 	r.Static("/images", "D:/Pre-thesis/Thesis Dataset-20260617T002927Z-3-002/Thesis Dataset/data_images")
 
