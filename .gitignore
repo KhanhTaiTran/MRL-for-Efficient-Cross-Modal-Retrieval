@@ -6,3 +6,5 @@
 
 # ignore the nodemodule folder 
 /node_modules
+
+/.understand-anything
