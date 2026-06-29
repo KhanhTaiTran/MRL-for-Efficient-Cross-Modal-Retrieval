@@ -60,6 +60,7 @@ export function ProductCard({
           <motion.img
             src={getImageUrl(product.product_id)}
             alt={product.caption}
+            crossOrigin="anonymous"
             loading="lazy"
             animate={{ scale: imageScale }}
             transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}

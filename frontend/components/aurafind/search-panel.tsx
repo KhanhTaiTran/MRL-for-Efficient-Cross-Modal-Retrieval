@@ -147,7 +147,9 @@ export function SearchPanel({
               disabled={isLoading}
               className={clsx(
                 "w-full bg-transparent pl-3 text-neutral-900 placeholder:text-neutral-400 outline-none disabled:opacity-60 dark:text-white",
-                compact ? "py-2 pr-20 text-sm" : "py-2.5 pr-24 text-sm sm:text-base",
+                compact
+                  ? "py-2 pr-20 text-sm"
+                  : "py-2.5 pr-24 text-sm sm:text-base",
               )}
             />
             <div className="absolute right-1 flex items-center gap-1">
