@@ -169,6 +169,7 @@ export function SearchPanel({
               <label className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl text-neutral-600 transition-all hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white">
                 <Camera className="h-4 w-4" />
                 <input
+                  title="Upload an image"
                   type="file"
                   accept="image/*"
                   className="sr-only"
