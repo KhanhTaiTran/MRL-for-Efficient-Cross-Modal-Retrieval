@@ -1,4 +1,3 @@
-# pyrefly: ignore [missing-import]
 import torch
 import time
 import os
@@ -7,12 +6,18 @@ from dataset import create_dataloaders
 from model import MRL_CrossModal_Model
 
 
-# Configure the dataloader
-# If want to use the root model (Zero-shot, not trained), set CHECKPOINT_PATH=None
-# CHECKPOINT_PATH = None
-
-# If want to use the trained model (fine-tuned), set CHECKPOINT_PATH='checkpoints/mrl_clip_epoch_3.pt'
-CHECKPOINT_PATH = 'checkpoints/mrl_clip_epoch_3.pt'
+# Checkpoint priority: picks the best available model automatically.
+# Override by setting CHECKPOINT_PATH directly, e.g.:
+#   CHECKPOINT_PATH = 'checkpoints/mrl_v2_best.pt'
+CHECKPOINT_PRIORITY = [
+    'checkpoints/mrl_v3_best.pt',   # Best: v3 aggressive hard-neg training
+    'checkpoints/mrl_v2_best.pt',   # Good: v2 hard-neg training
+    'checkpoints/mrl_clip_epoch_3.pt',  # Baseline: v1 fine-tune
+]
+CHECKPOINT_PATH = next(
+    (p for p in CHECKPOINT_PRIORITY if os.path.exists(p)),
+    None
+)
 
 
 def extract_and_save_features():
@@ -39,7 +44,7 @@ def extract_and_save_features():
     all_image_features = []
     all_text_features = []
     
-    print(f"\n3. Extracting Features for {len(test_loader.dataset)} items...")
+    print(f"\n3. Extracting Features for {len(test_loader.dataset)} items...") # type: ignore
     
     # Don't use gradient to save RAM and speed up
     with torch.no_grad():

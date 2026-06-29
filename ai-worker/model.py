@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from transformers import CLIPModel
+from transformers import CLIPModel 
 
 class MRL_CrossModal_Model(nn.Module):
     """
@@ -45,7 +45,7 @@ class MRL_CrossModal_Model(nn.Module):
         text_embeds = self.clip.text_projection(text_outputs[1])
                 
         if dim is not None:
-            # Cắt ngắn vector
+            # Truncate vector (Example: [Batch, 768] -> [Batch, 64])
             text_embeds = text_embeds[:, :dim]
         return text_embeds
 
