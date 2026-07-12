@@ -40,6 +40,14 @@ AQE_ALPHA            = 0.7       # Weight for original query (vs. top-k mean)
 AQE_TOP_K            = 5         # Number of retrieved items used for expansion
 # ─────────────────────────────────────────────────────────────────
 
+# helper function to extract raw vectors from FAISS index
+def _extract_raw_vectors(index):
+    n, dim = index.ntotal, index.d  # index.d auto return the dimension of the index
+    try:
+        return faiss.rev_swig_ptr(index.get_xb(), n * dim).reshape(n, dim)
+    except Exception:
+        return np.vstack([index.reconstruct(i) for i in range(n)])
+
 def setup_system():
     print("[1] Initialize system...")
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -127,14 +135,6 @@ def setup_system():
     device,
     db_vecs_512, reranker, aqe_expander,
 ) = setup_system()
-
-# helper function to extract raw vectors from FAISS index
-def _extract_raw_vectors(index):
-    n, dim = index.ntotal, index.d  # index.d auto return the dimension of the index
-    try:
-        return faiss.rev_swig_ptr(index.get_xb(), n * dim).reshape(n, dim)
-    except Exception:
-        return np.vstack([index.reconstruct(i) for i in range(n)])
 
 def get_requested_dimension(props):
     headers = props.headers or {}
