@@ -1,18 +1,3 @@
-"""
-Training Pipeline v3 — Aggressive Hard Negative Mining
-=======================================================
-Builds on v2 checkpoint (~53% R@1) to push toward 65%+.
-
-Key changes vs v2:
-    1. Larger batch (64) → more in-batch hard negatives per step
-    2. Lower temperature (0.05 vs 0.07) → sharper distribution, harder task
-    3. Hard neg ratio = 0.3 (only top-30% hardest) → even harder curriculum
-    4. Warmup LR schedule: ramp up then cosine decay
-    5. Starts from best v2 checkpoint automatically
-
-Expected: Recall@1 60–65% after 5–8 epochs
-"""
-
 import os
 import time
 

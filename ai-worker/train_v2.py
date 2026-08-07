@@ -1,22 +1,3 @@
-"""
-Training Pipeline v2 — MRL with Hard Negative Mining
-=====================================================
-Improvements over train.py (v1):
-    1. Uses MRL_InfoNCE_HardNeg_Loss instead of standard InfoNCE
-       → forces model to learn hard cases (similar-looking fashion items)
-    2. Validation Recall@1 computed after every epoch (early stopping)
-    3. Best checkpoint saved based on val Recall@1 (not loss)
-    4. Cosine LR schedule with warmup
-    5. Gradient clipping for stable training
-    6. Longer training (10 epochs) with early stopping patience
-
-Usage:
-    python train_v2.py
-
-    # Or on Google Colab with custom paths:
-    DATA_CSV=/path/to/data.csv DATA_IMG=/path/to/images python train_v2.py
-"""
-
 import os
 import time
 

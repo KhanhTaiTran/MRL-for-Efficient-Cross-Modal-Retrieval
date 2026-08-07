@@ -1,5 +1,3 @@
-version: "3.9"
-
 networks:
   mrl-network:
     driver: bridge
@@ -40,7 +38,11 @@ services:
     environment:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       RABBITMQ_QUEUE: image_search_queue
+      IMG_BASE_DIR: /data/images
       PORT: 8080
+    volumes:
+      # Mount dataset images (read-only) for static /images route
+      - "D:\\Pre-thesis\\Thesis Dataset-20260617T002927Z-3-002\\Thesis Dataset\\data_images:/data/images:ro"
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -58,7 +60,12 @@ services:
     restart: unless-stopped
     environment:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      RABBITMQ_HOST: rabbitmq
       RABBITMQ_QUEUE: image_search_queue
+      IMG_BASE_DIR: /data/images
+    volumes:
+      # Mount dataset images (read-only)
+      - "D:\\Pre-thesis\\Thesis Dataset-20260617T002927Z-3-002\\Thesis Dataset\\data_images:/data/images:ro"
     depends_on:
       rabbitmq:
         condition: service_healthy

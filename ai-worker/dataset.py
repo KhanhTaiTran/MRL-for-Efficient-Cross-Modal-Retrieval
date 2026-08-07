@@ -8,14 +8,6 @@ from sklearn.model_selection import train_test_split
 
 class FashionCrossModalDataset(Dataset):
     def __init__(self, df, img_dir, transform=None, tokenizer=None, max_length=77):
-        """
-        Args:
-            df (pandas.DataFrame): DataFrame containing the filtered data.
-            img_dir (str): Path to the directory containing images.
-            transform (callable, optional): Optional transform to be applied on a sample.
-            tokenizer (callable, optional): Tokenizer to encode text.
-            max_length (int): Maximum token length.
-        """
         self.df = df.reset_index(drop=True)
         self.img_dir = img_dir
         self.transform = transform

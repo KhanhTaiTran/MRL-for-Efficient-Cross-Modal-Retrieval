@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
+// TODO: check the MRL dim list in train file is that the same?
 var supportedMRLDimensions = map[int]struct{}{
 	8:   {},
 	16:  {},
@@ -32,7 +34,11 @@ func failOnError(err error, msg string) {
 }
 
 func main() {
-	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
+	rabbitmqURL := os.Getenv("RABBITMQ_URL")
+	if rabbitmqURL == "" {
+		rabbitmqURL = "amqp://guest:guest@localhost:5672/"
+	}
+	conn, err := amqp.Dial(rabbitmqURL)
 	failOnError(err, "Can't connect to RabbitMQ")
 	defer conn.Close()
 
@@ -80,7 +86,11 @@ func main() {
 	})
 
 	// static file server (using for display the images from other directory)
-	r.Static("/images", "D:/Pre-thesis/Thesis Dataset-20260617T002927Z-3-002/Thesis Dataset/data_images")
+	imgBaseDir := os.Getenv("IMG_BASE_DIR")
+	if imgBaseDir == "" {
+		imgBaseDir = "D:/Pre-thesis/Thesis Dataset-20260617T002927Z-3-002/Thesis Dataset/data_images"
+	}
+	r.Static("/images", imgBaseDir)
 
 	// Helper function for common RabbitMQ Publish & Wait logic
 	publishAndWait := func(c *gin.Context, body []byte, contentType string, searchType string, mrlDimension int, requestStartedAt time.Time) {

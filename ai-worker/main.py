@@ -16,17 +16,17 @@ from model import MRL_CrossModal_Model
 from reranker import TwoStageReranker
 from query_expansion import AlphaQueryExpander
 
-RABBITMQ_HOST    = "localhost"
-CHECKPOINT_PATH  = "./checkpoints/mrl_clip_epoch_3.pt"
-VECTOR_DB_DIR    = "./vector_db"
-IMG_BASE_DIR     = r"D:\Pre-thesis\Thesis Dataset-20260617T002927Z-3-002\Thesis Dataset\data_images"
+RABBITMQ_HOST    = os.environ.get("RABBITMQ_HOST", "localhost")
+CHECKPOINT_PATH  = os.environ.get("CHECKPOINT_PATH", "./checkpoints/mrl_clip_epoch_3.pt")
+VECTOR_DB_DIR    = os.environ.get("VECTOR_DB_DIR", "./vector_db")
+IMG_BASE_DIR     = os.environ.get("IMG_BASE_DIR", r"D:\Pre-thesis\Thesis Dataset-20260617T002927Z-3-002\Thesis Dataset\data_images")
 
 SUPPORTED_DIMENSIONS = [8, 16, 32, 64, 128, 256, 512]
 DEFAULT_DIMENSION    = 512
 MAX_LENGTH           = 77
 TOKENIZER_NAME       = 'openai/clip-vit-base-patch32'
 
-# ── Retrieval quality config ──────────────────────────────────────────
+# Retrieval quality config 
 # Two-stage reranking: use 64-dim for fast first-stage retrieval,
 # then rerank with full 512-dim cosine similarity.
 USE_RERANKING        = True      # Enable two-stage reranking
@@ -38,7 +38,6 @@ RERANK_MODE          = 'cosine' # 'cosine' or 'cross_encoder'
 USE_AQE              = True      # Enable AQE (text queries only)
 AQE_ALPHA            = 0.7       # Weight for original query (vs. top-k mean)
 AQE_TOP_K            = 5         # Number of retrieved items used for expansion
-# ─────────────────────────────────────────────────────────────────
 
 # helper function to extract raw vectors from FAISS index
 def _extract_raw_vectors(index):
@@ -107,7 +106,7 @@ def setup_system():
     
     tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
 
-    # ── Retrieval quality components ─────────────────────────────────
+    # Retrieval quality components
     # Keep raw 512-dim DB vectors in memory for cosine reranking
     db_vecs_512 = None
     if base_img_index is not None:
@@ -118,7 +117,6 @@ def setup_system():
     expander   = AlphaQueryExpander(alpha=AQE_ALPHA, top_k=AQE_TOP_K) if USE_AQE else None
     print(f"    -> Reranking: {'ON (' + RERANK_MODE + ')' if USE_RERANKING else 'OFF'}")
     print(f"    -> AQE:       {'ON (alpha=' + str(AQE_ALPHA) + ', top_k=' + str(AQE_TOP_K) + ')' if USE_AQE else 'OFF'}")
-    # ─────────────────────────────────────────────────────────────────
 
     return (
         model, transform, tokenizer,

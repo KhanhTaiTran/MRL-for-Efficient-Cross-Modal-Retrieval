@@ -5,10 +5,6 @@ from tqdm import tqdm
 from dataset import create_dataloaders
 from model import MRL_CrossModal_Model
 
-
-# Checkpoint priority: picks the best available model automatically.
-# Override by setting CHECKPOINT_PATH directly, e.g.:
-#   CHECKPOINT_PATH = 'checkpoints/mrl_v2_best.pt'
 CHECKPOINT_PRIORITY = [
     'checkpoints/mrl_v3_best.pt',   # Best: v3 aggressive hard-neg training
     'checkpoints/mrl_v2_best.pt',   # Good: v2 hard-neg training

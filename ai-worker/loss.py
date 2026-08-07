@@ -3,26 +3,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class Matryoshka_InfoNCE_Loss(nn.Module):
-    """
-    Matryoshka Representation Learning (MRL) apply for Cross-Modal Retrieval (Contrastive Loss/InfoNCE).
-    
-    Effect:
-    Instead of calculating loss on the full 768-dimensional vector, this function will cut the vector into smaller parts (e.g., 8, 16, 32... dimensions).
-    It forces the model to learn to pack the most important information into the initial dimensions of the vector.
-    """
     def __init__(self, nesting_list=[8, 16, 32, 64, 128, 256, 512, 768], temperature=0.07):
         super().__init__()
-        self.nesting_list = nesting_list # vector dimensions to be cut
-        self.temperature = temperature   # temperature to sharpen probability distribution
+        self.nesting_list = nesting_list 
+        self.temperature = temperature   
         
     def forward(self, image_features, text_features):
-        """
-        Args:
-            image_features: Tensor shape [Batch, 768]
-            text_features: Tensor shape [Batch, 768]
-        Returns:
-            total_loss: Total loss of all dimensions
-        """
         device = image_features.device
         batch_size = image_features.shape[0]
         
@@ -48,7 +34,7 @@ class Matryoshka_InfoNCE_Loss(nn.Module):
             logits_per_text = logits_per_image.T
             
             # 4. CALCULATE CROSS-ENTROPY LOSS (InfoNCE)
-            # Loss for finding Text from Image
+            # Loss for finding Text from Image 
             loss_i2t = F.cross_entropy(logits_per_image, labels)
             # Loss for finding Image from Text
             loss_t2i = F.cross_entropy(logits_per_text, labels)
@@ -56,8 +42,6 @@ class Matryoshka_InfoNCE_Loss(nn.Module):
             # Average loss
             step_loss = (loss_i2t + loss_t2i) / 2.0
             
-            # 5. ADD UP LOSS OF EACH DIMENSION
-            # In the original paper, they can use weights c_m, but the most common is to divide c_m = 1
             total_loss += step_loss
             
         return total_loss
@@ -74,35 +58,8 @@ if __name__ == "__main__":
     loss = loss_fn(dummy_img, dummy_txt)
     print(f"Total MRL Loss: {loss.item():.4f}")
 
-
-# ======================================================================
 # Hard Negative Mining variant
-# ======================================================================
-
 class MRL_InfoNCE_HardNeg_Loss(nn.Module):
-    """
-    MRL InfoNCE Loss with In-Batch Hard Negative Mining.
-
-    Improvement over Matryoshka_InfoNCE_Loss:
-    - Identifies hard negatives: negative samples that have HIGH similarity
-      to the anchor (i.e., the model is confused about them).
-    - Upweights or exclusively uses hard negatives in the contrastive loss.
-    - Forces the model to learn finer-grained distinctions between
-      visually/semantically similar fashion items.
-
-    Hard negative mining strategy:
-        For each anchor, sort all negatives by similarity descending.
-        Zero-out (mask) easy negatives that are below a percentile threshold.
-        Only hard negatives (top hard_neg_ratio of negatives) contribute to loss.
-
-    Args:
-        nesting_list:    Dimensions to compute MRL loss at.
-        temperature:     InfoNCE temperature (lower = sharper distribution).
-        hard_neg_ratio:  Fraction of negatives to keep as "hard". Range (0, 1].
-                         0.5 = keep only the top-50% hardest negatives.
-                         1.0 = keep all negatives (degenerates to standard InfoNCE).
-    """
-
     def __init__(
         self,
         nesting_list: list |None = None,
@@ -117,46 +74,34 @@ class MRL_InfoNCE_HardNeg_Loss(nn.Module):
         self.hard_neg_ratio = hard_neg_ratio
 
     def _hard_neg_infonce(self, img_feat: torch.Tensor, txt_feat: torch.Tensor) -> torch.Tensor:
-        """
-        Compute InfoNCE loss with hard negative masking for a single resolution.
-
-        Args:
-            img_feat: [B, D] normalized image features.
-            txt_feat: [B, D] normalized text  features.
-
-        Returns:
-            Scalar loss.
-        """
         device = img_feat.device
         batch_size = img_feat.shape[0]
         labels = torch.arange(batch_size, device=device)
 
-        # Similarity matrices [B, B]
+        # similarity logits
         logits_i2t = (img_feat @ txt_feat.T) / self.temperature
         logits_t2i = logits_i2t.T
 
-        # --- Hard negative masking ---
-        # For each row, the diagonal is the positive. We want to
-        # mask out easy negatives (low-sim off-diagonal entries).
+        # hard negative 
         def apply_hard_neg_mask(logits: torch.Tensor) -> torch.Tensor:
             B = logits.shape[0]
-            pos_mask = torch.eye(B, dtype=torch.bool, device=device)  # [B, B]
+            pos_mask = torch.eye(B, dtype=torch.bool, device=device)  
 
             # Collect negative logits per row
-            neg_logits = logits.masked_fill(pos_mask, float('-inf'))  # [B, B]
+            neg_logits = logits.masked_fill(pos_mask, float('-inf'))  
 
             # Threshold: keep only top hard_neg_ratio of negatives
             k = max(1, int((B - 1) * self.hard_neg_ratio))
-            threshold_vals, _ = neg_logits.topk(k, dim=1)             # [B, k]
-            threshold = threshold_vals[:, -1].unsqueeze(1)             # [B, 1] smallest kept
+            threshold_vals, _ = neg_logits.topk(k, dim=1)             
+            threshold = threshold_vals[:, -1].unsqueeze(1)            
 
             # Build mask: True = keep (positive OR hard negative)
-            keep_mask = pos_mask | (neg_logits >= threshold)           # [B, B]
+            keep_mask = pos_mask | (neg_logits >= threshold)           
             # Replace dropped entries with a very large negative so softmax ignores them
             masked_logits = logits.masked_fill(~keep_mask, -1e9)
             return masked_logits
 
-        masked_i2t = apply_hard_neg_mask(logits_i2t)
+        masked_i2t = apply_hard_neg_mask(logits_i2t) #TODO: Explain the purpose of this line
         masked_t2i = apply_hard_neg_mask(logits_t2i)
 
         loss_i2t = F.cross_entropy(masked_i2t, labels)
@@ -164,14 +109,6 @@ class MRL_InfoNCE_HardNeg_Loss(nn.Module):
         return (loss_i2t + loss_t2i) / 2.0
 
     def forward(self, image_features: torch.Tensor, text_features: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            image_features: [Batch, D_full]  (un-normalized)
-            text_features:  [Batch, D_full]  (un-normalized)
-
-        Returns:
-            Scalar total MRL loss with hard negative mining.
-        """
         total_loss = image_features.new_tensor(0.0)  # Initialize on same device and dtype
         for dim in self.nesting_list:
             img_d = F.normalize(image_features[:, :dim], dim=-1)

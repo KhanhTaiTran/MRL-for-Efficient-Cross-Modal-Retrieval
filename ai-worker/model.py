@@ -61,6 +61,6 @@ if __name__ == "__main__":
     img_feat, txt_feat = model(dummy_img, dummy_input_ids, dummy_mask)
     print(f"Full Image features shape: {img_feat.shape}")
     
-    # Test cắt MRL
+    # Test truncate MRL
     img_feat_mrl = model.extract_image_features(dummy_img, dim=64)
     print(f"Truncated Image features (MRL 64D): {img_feat_mrl.shape}")
