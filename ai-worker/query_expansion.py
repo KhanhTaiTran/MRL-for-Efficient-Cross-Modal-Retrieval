@@ -1,47 +1,9 @@
-"""
-Alpha Query Expansion (AQE) for MRL Cross-Modal Retrieval.
-
-Idea:
-    A text query embedding is often imprecise compared to image embeddings
-    in the shared space. AQE refines the query by interpolating it with
-    the mean embedding of the top-k retrieved results.
-
-    Refined query:  q* = normalize(alpha * q0 + (1 - alpha) * mean(top_k_db_vecs))
-
-    Intuition:
-        - q0 preserves the original query intent
-        - mean(top_k) "pulls" the query toward the visual cluster it belongs to
-        - alpha controls how aggressively we expand (0.7 = 70% original)
-
-AQE is especially effective for:
-    - Short/ambiguous queries ("red dress", "blue sneakers")
-    - Fashion domain where visual clusters are tight
-
-Usage:
-    expander = AlphaQueryExpander(alpha=0.7)
-    refined_q = expander.expand(query_vec_512, db_vecs_512, top_k=5)
-    # Then use refined_q for final retrieval
-"""
-
 import torch
 import torch.nn.functional as F
 from typing import List, Tuple
 
 
 class AlphaQueryExpander:
-    """
-    Alpha Query Expansion (AQE).
-
-    Refines a query vector by blending it with the mean embedding of
-    the top-k retrieved database vectors (pseudo-relevance feedback).
-
-    Args:
-        alpha: Weight for the original query (0 < alpha < 1).
-               Higher alpha = closer to original query intent.
-               Typical range: 0.6 – 0.9. Default: 0.7.
-        top_k: Number of top-retrieved items to use for expansion. Default: 5.
-    """
-
     def __init__(self, alpha: float = 0.7, top_k: int = 5):
         if not (0 < alpha < 1):
             raise ValueError(f"alpha must be in (0, 1), got {alpha}")

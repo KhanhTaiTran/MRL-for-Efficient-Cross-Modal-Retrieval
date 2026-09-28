@@ -1,12 +1,3 @@
-"""
-Run:
-    python benchmark.py                  # Full benchmark (all strategies)
-    python benchmark.py --mode baseline  # Only MRL baseline table
-    python benchmark.py --mode rerank    # Only reranking comparison
-    python benchmark.py --mode aqe       # Only AQE hyperparameter sweep
-    python benchmark.py --mode combined  # AQE + reranking stacked
-"""
-
 import argparse
 import os
 import time
