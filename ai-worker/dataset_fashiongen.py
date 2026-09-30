@@ -82,7 +82,7 @@ class FashionGenDataset(Dataset):
     def __len__(self) -> int: # return the number of rows in the dataframe
         return len(self.df)
 
-    def __getitem__(self, idx: int): # return a turple data for the given index
+    def __getitem__(self, idx: int): # return a tuple data for the given index
         row = self.df.iloc[idx]
 
         # img
@@ -105,9 +105,9 @@ class FashionGenDataset(Dataset):
 
 # dataloaders for training and validation
 def create_fashiongen_dataloaders(
-    batch_size  : int = cfg.BATCH_SIZE,
+    batch_size : int = cfg.BATCH_SIZE,
     num_workers : int = cfg.NUM_WORKERS,
-    val_batch   : int = 128,   # larger batch is fine for inference
+    val_batch : int = 128,   # larger batch is fine for inference
 ) -> Tuple[DataLoader, DataLoader]:
     """
     Returns:
@@ -130,7 +130,7 @@ def create_fashiongen_dataloaders(
         transform =transform,
     )
 
-    def collate_fn(batch):
+    def collate_fn(batch): # batch is a list of tuples, each tuple is (img_tensor, input_ids, attention_mask, product_id)
         imgs, ids, masks, pids = zip(*batch)
         return (
             torch.stack(imgs),
@@ -160,17 +160,16 @@ def create_fashiongen_dataloaders(
 
     return train_loader, val_loader
 
-
-# ── Quick smoke-test ───────────────────────────────────────────────────────────
-
+# smoke test
 if __name__ == "__main__":
     print("Loading tokenizer …")
     tokenizer = AutoTokenizer.from_pretrained(cfg.CLIP_MODEL_NAME)
-
+    print("Loading datasets …")
     print("\n[TRAIN]")
     train_ds = FashionGenDataset(cfg.TRAIN_CSV, cfg.TRAIN_IMG_DIR, tokenizer)
     print(f"  Rows: {len(train_ds):,}")
     img, ids, mask, pid = train_ds[0]
+    img = torch.as_tensor(img)   # convert PIL image to tensor
     print(f"  img shape : {img.shape}")
     print(f"  ids shape : {ids.shape}")
     print(f"  product_id: {pid}")
