@@ -102,17 +102,25 @@ class FashionGenDataset(Dataset):
 
         return img_tensor, input_ids, attention_mask, row["product_id"]
 
+def _collate_fn(batch):
+    imgs, ids, masks, pids = zip(*batch)
+    return (
+        torch.stack(imgs),
+        torch.stack(ids),
+        torch.stack(masks),
+        list(pids),
+    )
 
 # dataloaders for training and validation
 def create_fashiongen_dataloaders(
-    batch_size : int = cfg.BATCH_SIZE,
+    batch_size  : int = cfg.BATCH_SIZE,
     num_workers : int = cfg.NUM_WORKERS,
-    val_batch : int = 128,   # larger batch is fine for inference
+    val_batch   : int = 128,
 ) -> Tuple[DataLoader, DataLoader]:
     """
     Returns:
-        train_loader: shuffled, drops_last=True  (for contrastive training)
-        val_loader  : ordered, no shuffle         (for benchmark evaluation)
+        train_loader: shuffled, drop_last=True   (contrastive training)
+        val_loader  : ordered, no shuffle         (benchmark evaluation)
     """
     tokenizer = AutoTokenizer.from_pretrained(cfg.CLIP_MODEL_NAME)
     transform = clip_transform()
@@ -130,15 +138,6 @@ def create_fashiongen_dataloaders(
         transform =transform,
     )
 
-    def collate_fn(batch): # batch is a list of tuples, each tuple is (img_tensor, input_ids, attention_mask, product_id)
-        imgs, ids, masks, pids = zip(*batch)
-        return (
-            torch.stack(imgs),
-            torch.stack(ids),
-            torch.stack(masks),
-            list(pids),
-        )
-
     train_loader = DataLoader(
         train_ds,
         batch_size  =batch_size,
@@ -146,7 +145,7 @@ def create_fashiongen_dataloaders(
         num_workers =num_workers,
         drop_last   =True,
         pin_memory  =True,
-        collate_fn  =collate_fn,
+        collate_fn  =_collate_fn,
     )
     val_loader = DataLoader(
         val_ds,
@@ -155,7 +154,7 @@ def create_fashiongen_dataloaders(
         num_workers =num_workers,
         drop_last   =False,
         pin_memory  =True,
-        collate_fn  =collate_fn,
+        collate_fn  =_collate_fn,
     )
 
     return train_loader, val_loader

@@ -1,9 +1,3 @@
-"""
-Usage:
-    python extract_fashiongen_h5.py              # uses default paths
-    python extract_fashiongen_h5.py --train_n 20000   # smaller train subset
-"""
-
 import argparse
 import csv
 import os
@@ -15,17 +9,15 @@ import h5py
 import numpy as np
 from PIL import Image
 
-# ── Config ────────────────────────────────────────────────────────────────────
-H5_ROOT   = r"D:\Pre-thesis\FashionGen"
-OUT_ROOT  = os.path.join(H5_ROOT, "extracted")
-TRAIN_H5  = os.path.join(H5_ROOT, "fashiongen_256_256_train.h5")
-VAL_H5    = os.path.join(H5_ROOT, "fashiongen_256_256_validation.h5")
+# config
+H5_ROOT = r"D:\Pre-thesis\FashionGen"
+OUT_ROOT = os.path.join(H5_ROOT, "extracted")
+TRAIN_H5 = os.path.join(H5_ROOT, "fashiongen_256_256_train.h5")
+VAL_H5 = os.path.join(H5_ROOT, "fashiongen_256_256_validation.h5")
 
-TRAIN_SUBSET = 30_000   # How many train images to sample
-JPEG_QUALITY = 95       # High quality — CLIP is sensitive to compression
+TRAIN_SUBSET = 30_000 
+JPEG_QUALITY = 95       
 RANDOM_SEED  = 42
-# ──────────────────────────────────────────────────────────────────────────────
-
 
 def decode(val):
     """Decode byte-string fields from H5 into plain Python str."""
@@ -93,7 +85,7 @@ def extract_split(h5_path, out_dir, indices=None, split_name="split"):
             writer.writeheader()
 
             for i, row_idx in enumerate(indices):
-                # ── Progress ───────────────────────────────────────────────
+                # progress
                 if i % 500 == 0 and i > 0:
                     elapsed = time.time() - t0
                     rate    = i / elapsed
@@ -121,7 +113,7 @@ def extract_split(h5_path, out_dir, indices=None, split_name="split"):
                     skipped += 1
                     continue
 
-                # ── Save JPEG ──────────────────────────────────────────────
+                # save image + metadata row
                 filename   = f"{row_idx:07d}.jpg"
                 jpg_path   = os.path.join(img_dir, filename)
                 rel_path   = os.path.join("images", filename)   # relative to out_dir
@@ -136,7 +128,7 @@ def extract_split(h5_path, out_dir, indices=None, split_name="split"):
                 })
                 count += 1
 
-    elapsed = time.time() - t0
+    elapsed = time.time() - t0 # end timer
     print(f"\n  [OK] Done! {count:,} images saved in {elapsed/60:.1f} min  ({skipped} skipped / no text)")
     return count
 

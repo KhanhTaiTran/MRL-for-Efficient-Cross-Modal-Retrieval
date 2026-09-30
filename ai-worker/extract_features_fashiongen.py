@@ -27,7 +27,6 @@ import config_fashiongen as cfg
 from dataset_fashiongen import create_fashiongen_dataloaders
 from model import MRL_CrossModal_Model
 
-
 # helper function to load model 
 def load_model(checkpoint_path: str | None, device: str) -> MRL_CrossModal_Model: #the output expected is a MRL_CrossModal_Model
     model = MRL_CrossModal_Model().to(device)
@@ -68,24 +67,24 @@ def extract_and_save(checkpoint_path: str | None = None):
     t0 = time.perf_counter() # start timer
 
     with torch.no_grad():
-        for batch_idx, (images, input_ids, attn_masks, product_ids) in enumerate(val_loader):
+        for batch_idx, (images, input_ids, attn_masks, product_ids) in enumerate(val_loader): #loop through all the img in the batch
             images     = images.to(device)
             input_ids  = input_ids.to(device)
             attn_masks = attn_masks.to(device)
 
-            img_feats = model.extract_image_features(images)        # [B, 512]
+            img_feats = model.extract_image_features(images)        # [B, 512] full dims
             txt_feats = model.extract_text_features(input_ids, attn_masks)  # [B, 512]
 
             all_img_feats.append(img_feats.cpu())
             all_txt_feats.append(txt_feats.cpu())
             all_product_ids.extend(product_ids)
 
-            batch_size = val_loader.batch_size or 1
-            n_batches = len(val_loader)
+            #batch_size = val_loader.batch_size or 1
+            #n_batches = len(val_loader)
 
             # Progress
-            if (batch_idx + 1) % 20 == 0 or (batch_idx + 1) == n_batches:
-                done = min((batch_idx + 1) * batch_size, n_items)
+            if (batch_idx + 1) % 20 == 0 or (batch_idx + 1) == len(val_loader):
+                done = min((batch_idx + 1) * val_loader.batch_size, len(val_loader.dataset))  # type: ignore
                 pct = done / n_items * 100
                 elapsed = time.perf_counter() - t0
                 eta = elapsed / (batch_idx + 1) * (len(val_loader) - batch_idx - 1)
