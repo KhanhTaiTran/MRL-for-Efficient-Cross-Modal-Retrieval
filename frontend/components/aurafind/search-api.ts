@@ -17,16 +17,12 @@ async function parseSearchResponse(
 
   if (!response.ok) {
     throw new Error(
-      payload.error ??
-        payload.message ??
-        `Request failed (${response.status})`,
+      payload.error ?? payload.message ?? `Request failed (${response.status})`,
     );
   }
 
   if (payload.status !== "success" || !Array.isArray(payload.data)) {
-    throw new Error(
-      payload.message ?? "Search returned an unexpected result.",
-    );
+    throw new Error(payload.message ?? "Search returned an unexpected result.");
   }
 
   return payload;
@@ -35,10 +31,12 @@ async function parseSearchResponse(
 export async function searchByText(
   query: string,
   mrlDimension: number,
+  searchMode: "direct" | "adaptive" = "direct",
 ): Promise<SearchResponse> {
   const formData = new FormData();
   formData.append("query", query.trim());
   formData.append("mrl_dimension", String(mrlDimension));
+  formData.append("search_mode", searchMode);
 
   const response = await fetch(`${API_BASE_URL}/api/search/text`, {
     method: "POST",
@@ -51,10 +49,12 @@ export async function searchByText(
 export async function searchByImage(
   image: File,
   mrlDimension: number,
+  searchMode: "direct" | "adaptive" = "direct",
 ): Promise<SearchResponse> {
   const formData = new FormData();
   formData.append("image", image);
   formData.append("mrl_dimension", String(mrlDimension));
+  formData.append("search_mode", searchMode);
 
   const response = await fetch(`${API_BASE_URL}/api/search/image`, {
     method: "POST",
@@ -62,6 +62,18 @@ export async function searchByImage(
   });
 
   return parseSearchResponse(response);
+}
+
+export async function fetchSearchConfig(): Promise<{
+  supported_dims: number[];
+  active_index_version: string;
+  default_dim: number;
+}> {
+  const response = await fetch(`${API_BASE_URL}/api/search/config`);
+  if (!response.ok) {
+    throw new Error("Failed to fetch search configuration");
+  }
+  return response.json();
 }
 
 export async function fetchProductImageAsFile(

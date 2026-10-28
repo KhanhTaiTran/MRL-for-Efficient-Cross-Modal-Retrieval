@@ -37,6 +37,7 @@ services:
       - "8080:8080"
     environment:
       RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      INFER_API_URL: http://ai-worker:8001
       RABBITMQ_QUEUE: image_search_queue
       IMG_BASE_DIR: /data/images
       PORT: 8080

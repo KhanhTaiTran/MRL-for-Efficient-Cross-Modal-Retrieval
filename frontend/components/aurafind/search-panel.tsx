@@ -3,7 +3,6 @@
 import clsx from "clsx";
 import { AnimatePresence, motion } from "framer-motion";
 import { Camera, Loader2, Search, X } from "lucide-react";
-import { AiPrecisionSlider } from "./ai-precision-slider";
 
 export interface SearchPanelProps {
   query: string;
@@ -15,14 +14,10 @@ export interface SearchPanelProps {
   imageFileName: string | null;
   isImageMode: boolean;
   onImageModeChange: (imageMode: boolean) => void;
-  mrlDimension: number;
-  onMrlDimensionChange: (dimension: number) => void;
   isLoading: boolean;
   searchFocused: boolean;
   onSearchFocusChange: (focused: boolean) => void;
   onDropImage: (file: File) => void;
-  /** Always show the MRL slider (mobile main content) */
-  alwaysShowSlider?: boolean;
   /** Compact variant for tablet header */
   compact?: boolean;
   className?: string;
@@ -38,19 +33,13 @@ export function SearchPanel({
   imageFileName,
   isImageMode,
   onImageModeChange,
-  mrlDimension,
-  onMrlDimensionChange,
   isLoading,
   searchFocused,
   onSearchFocusChange,
   onDropImage,
-  alwaysShowSlider = false,
   compact = false,
   className,
 }: SearchPanelProps) {
-  const showSlider =
-    alwaysShowSlider || searchFocused || isImageMode || isLoading;
-
   return (
     <div
       onDragOver={(e) => e.preventDefault()}
@@ -186,13 +175,6 @@ export function SearchPanel({
           </motion.div>
         )}
       </AnimatePresence>
-
-      <AiPrecisionSlider
-        value={mrlDimension}
-        onChange={onMrlDimensionChange}
-        disabled={isLoading}
-        visible={showSlider}
-      />
     </div>
   );
 }

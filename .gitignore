@@ -10,3 +10,13 @@
 /.understand-anything
 
 /chapters
+# Local retrieval backups and verification runtime files
+/ai-worker/vector_db.backup-*/
+/ai-worker/vector_db.building-*/
+/tmp/
+/docs/
+# Generated retrieval data, local secrets and compiled services
+/ai-worker/vector_db/
+/core-api/*.exe
+/.env
+/.env.local

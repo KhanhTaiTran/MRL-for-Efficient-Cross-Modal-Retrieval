@@ -1,208 +1,79 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
-	"io"
 	"log"
 	"net/http"
 	"os"
-	"strconv"
 	"time"
 
+	"core-api/internal/api"
+	"core-api/internal/broker"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
-	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-// TODO: check the MRL dim list in train file is that the same?
-var supportedMRLDimensions = map[int]struct{}{
-	16:  {},
-	32:  {},
-	64:  {},
-	128: {},
-	256: {},
-	512: {},
-}
-
-func failOnError(err error, msg string) {
-	if err != nil {
-		log.Panicf("%s: %s", msg, err)
-	}
-}
-
 func main() {
-	rabbitmqURL := os.Getenv("RABBITMQ_URL")
-	if rabbitmqURL == "" {
-		rabbitmqURL = "amqp://guest:guest@localhost:5672/"
+	inferAPIURL := os.Getenv("INFER_API_URL")
+	if inferAPIURL == "" {
+		inferAPIURL = "http://localhost:8001"
 	}
-	conn, err := amqp.Dial(rabbitmqURL)
-	failOnError(err, "Can't connect to RabbitMQ")
-	defer conn.Close()
 
-	ch, err := conn.Channel()
-	failOnError(err, "Can't open channel")
-	defer ch.Close()
+	inferTimeoutStr := os.Getenv("INFER_TIMEOUT")
+	inferTimeout := 15 * time.Second
+	if inferTimeoutStr != "" {
+		if d, err := time.ParseDuration(inferTimeoutStr); err == nil {
+			inferTimeout = d
+		}
+	}
 
-	q, err := ch.QueueDeclare(
-		"",
-		false,
-		false,
-		true,
-		false,
-		nil,
-	)
-	failOnError(err, "Can't declare reply queue")
+	imgBaseDir := os.Getenv("IMG_BASE_DIR")
+	if imgBaseDir == "" {
+		imgBaseDir = "./data/sample_images"
+	}
 
-	msgs, err := ch.Consume(
-		q.Name,
-		"",
-		true,
-		false,
-		false,
-		false,
-		nil,
-	)
-	failOnError(err, "Can't register consumer")
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
 
-	// Router and CORS Config
+	// Initialize HTTP client to Python inference service
+	inferClient := broker.NewInferClient(inferAPIURL, inferTimeout)
+
+	// Router and CORS Configuration
 	r := gin.Default()
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"http://localhost:3000"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
 
-	// Add middleware to ensure Vary: Origin is always set to prevent browser caching issues
-	// where an <img> load caches the response without CORS headers, breaking subsequent fetch() calls.
+	// Ensure Vary: Origin header
 	r.Use(func(c *gin.Context) {
 		c.Header("Vary", "Origin")
 		c.Next()
 	})
 
-	// static file server (using for display the images from other directory)
-	imgBaseDir := os.Getenv("IMG_BASE_DIR")
-	if imgBaseDir == "" {
-		imgBaseDir = "D:/Pre-thesis/Thesis Dataset-20260617T002927Z-3-002/Thesis Dataset/data_images"
-	}
+	// Static images server
 	r.Static("/images", imgBaseDir)
 
-	// Helper function for common RabbitMQ Publish & Wait logic
-	publishAndWait := func(c *gin.Context, body []byte, contentType string, searchType string, mrlDimension int, requestStartedAt time.Time) {
-		corrID := uuid.New().String()
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second) // Increased timeout for 22k search
-		defer cancel()
-
-		err = ch.PublishWithContext(ctx,
-			"",
-			"search_queue",
-			false,
-			false,
-			amqp.Publishing{
-				ContentType:   contentType,
-				CorrelationId: corrID,
-				ReplyTo:       q.Name,
-				Headers: amqp.Table{
-					"mrl_dimension": int32(mrlDimension),
-					"search_type":   searchType,
-				},
-				Body: body,
-			},
-		)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error publishing message to worker"})
-			return
-		}
-
-		for d := range msgs {
-			if d.CorrelationId != corrID {
-				continue
-			}
-
-			var payload map[string]any
-			if err := json.Unmarshal(d.Body, &payload); err != nil {
-				c.Data(http.StatusOK, "application/json", d.Body)
-				return
-			}
-
-			payload["mrl_dimension"] = mrlDimension
-			payload["request_latency_ms"] = time.Since(requestStartedAt).Milliseconds()
-
-			responseBody, err := json.Marshal(payload)
-			if err != nil {
-				c.Data(http.StatusOK, "application/json", d.Body)
-				return
-			}
-
-			c.Data(http.StatusOK, "application/json", responseBody)
-			return
-		}
-
-		c.JSON(http.StatusRequestTimeout, gin.H{"error": "Timed out waiting for search results from worker"})
-	}
-
-	// 1. Image-to-Image Search API
-	r.POST("/api/search/image", func(c *gin.Context) {
-		requestStartedAt := time.Now()
-
-		file, _, err := c.Request.FormFile("image")
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Please upload an image with key 'image'"})
-			return
-		}
-		defer file.Close()
-
-		dimensionValue := c.Request.FormValue("mrl_dimension")
-		mrlDimension, err := strconv.Atoi(dimensionValue)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Please provide a valid mrl_dimension"})
-			return
-		}
-		if _, ok := supportedMRLDimensions[mrlDimension]; !ok {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported mrl_dimension. Use 8, 16, 32, 64, 128, 256, or 512."})
-			return
-		}
-
-		imageBytes, err := io.ReadAll(file)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Cannot read image file"})
-			return
-		}
-
-		publishAndWait(c, imageBytes, "image/jpeg", "image", mrlDimension, requestStartedAt)
+	// Health check
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "ok",
+			"service": "core-api",
+		})
 	})
 
-	// 2. Text-to-Image Search API
-	r.POST("/api/search/text", func(c *gin.Context) {
-		requestStartedAt := time.Now()
+	// Register API Routes
+	apiGroup := r.Group("/api")
+	searchHandler := api.NewSearchHandler(inferClient)
+	searchHandler.RegisterRoutes(apiGroup)
 
-		query := c.Request.FormValue("query")
-		if query == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Please provide a search text with key 'query'"})
-			return
-		}
-
-		dimensionValue := c.Request.FormValue("mrl_dimension")
-		mrlDimension, err := strconv.Atoi(dimensionValue)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Please provide a valid mrl_dimension"})
-			return
-		}
-		if _, ok := supportedMRLDimensions[mrlDimension]; !ok {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported mrl_dimension. Use 8, 16, 32, 64, 128, 256, or 512."})
-			return
-		}
-
-		textBytes := []byte(query)
-		publishAndWait(c, textBytes, "text/plain", "text", mrlDimension, requestStartedAt)
-	})
-
-	log.Println("Core API is running at http://localhost:8080")
-	if err := r.Run(":8080"); err != nil {
-		log.Fatal(err)
+	log.Printf("[*] Core API server running on :%s (Infer API: %s)", port, inferAPIURL)
+	if err := r.Run(":" + port); err != nil {
+		log.Fatalf("Server startup failed: %v", err)
 	}
 }

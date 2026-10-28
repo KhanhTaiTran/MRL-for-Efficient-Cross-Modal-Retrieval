@@ -44,7 +44,7 @@ export function HeroBanner() {
               className="mt-4 max-w-lg text-sm leading-relaxed text-white/75 sm:text-base"
             >
               Describe a look, upload a reference, or discover similar pieces
-              with Matryoshka-powered visual search — precision you control.
+              that match your style.
             </motion.p>
           </div>
         </motion.div>

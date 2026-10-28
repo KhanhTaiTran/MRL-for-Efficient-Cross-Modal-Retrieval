@@ -1,19 +1,17 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { AlertCircle, Cpu, Sparkles, Zap } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { AlertCircle } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AuraFindHeader } from "./header";
 import { HeroBanner, TrendingGrid } from "./home-content";
-import {
-  MobileBottomNav,
-  type MobileNavTab,
-} from "./mobile-bottom-nav";
+import { MobileBottomNav, type MobileNavTab } from "./mobile-bottom-nav";
 import { ProductCard } from "./product-card";
 import { ProductSkeleton } from "./product-skeleton";
 import { SearchPanel } from "./search-panel";
 import {
+  fetchSearchConfig,
   fetchProductImageAsFile,
   getSearchErrorMessage,
   searchByImage,
@@ -30,12 +28,21 @@ import { PRODUCT_GRID_CLASS } from "./constants";
 
 export function AuraFindApp() {
   const [query, setQuery] = useState("");
+  const [searchReady, setSearchReady] = useState(false);
+  useEffect(() => {
+    fetchSearchConfig()
+      .then((c) => {
+        setSearchReady(c.supported_dims.length > 0);
+        setMrlDimension(c.default_dim);
+      })
+      .catch((err) => toast.error(getSearchErrorMessage(err)));
+  }, []);
+
   const [mrlDimension, setMrlDimension] = useState(DEFAULT_MRL_DIMENSION);
   const [isLoading, setIsLoading] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [results, setResults] = useState<EnrichedProduct[]>([]);
-  const [latencyMs, setLatencyMs] = useState<number | null>(null);
-  const [activeDimension, setActiveDimension] = useState<number | null>(null);
+  const retrievalMode = "adaptive" as const;
   const [error, setError] = useState<string | null>(null);
   const [cartCount, setCartCount] = useState(0);
   const [searchFocused, setSearchFocused] = useState(false);
@@ -84,23 +91,24 @@ export function AuraFindApp() {
       setIsLoading(true);
       setError(null);
       setResults([]);
-      setLatencyMs(null);
-      setActiveDimension(null);
+
       setHasSearched(true);
       setMobileNavTab("search");
 
       try {
         const payload =
           mode === "text"
-            ? await searchByText(query, mrlDimension)
-            : await searchByImage(file ?? selectedFile!, mrlDimension);
+            ? await searchByText(query, mrlDimension, retrievalMode)
+            : await searchByImage(
+                file ?? selectedFile!,
+                mrlDimension,
+                retrievalMode,
+              );
 
         setResults(payload.data.map(enrichProduct));
-        setLatencyMs(payload.search_latency_ms);
-        setActiveDimension(payload.mrl_dimension);
 
         if (payload.data.length === 0) {
-          toast.message("No matches found. Try adjusting AI precision.");
+          toast.message("No products found. Try a different description.");
         }
       } catch (err) {
         const message = getSearchErrorMessage(err);
@@ -111,7 +119,7 @@ export function AuraFindApp() {
         setScanningProductId(null);
       }
     },
-    [query, mrlDimension, selectedFile],
+    [query, mrlDimension, selectedFile, retrievalMode],
   );
 
   const handleTextSearch = () => {
@@ -138,12 +146,10 @@ export function AuraFindApp() {
     try {
       const file = await fetchProductImageAsFile(product.product_id);
       applyImageFile(file);
-      const payload = await searchByImage(file, mrlDimension);
+      const payload = await searchByImage(file, mrlDimension, retrievalMode);
 
       setResults(payload.data.map(enrichProduct));
-      setLatencyMs(payload.search_latency_ms);
-      setActiveDimension(payload.mrl_dimension);
-      toast.success(`Similar styles to "${product.caption}"`);
+      toast.success(`Similar styles to "${product.displayName}"`);
     } catch (err) {
       const message = getSearchErrorMessage(err);
       setError(message);
@@ -158,8 +164,7 @@ export function AuraFindApp() {
     setHasSearched(false);
     setResults([]);
     setError(null);
-    setLatencyMs(null);
-    setActiveDimension(null);
+
     setQuery("");
     clearImage();
     setMobileNavTab("home");
@@ -193,9 +198,7 @@ export function AuraFindApp() {
     imageFileName: selectedFile?.name ?? null,
     isImageMode,
     onImageModeChange: setIsImageMode,
-    mrlDimension,
-    onMrlDimensionChange: setMrlDimension,
-    isLoading,
+    isLoading: isLoading || !searchReady,
     searchFocused,
     onSearchFocusChange: setSearchFocused,
     onDropImage: applyImageFile,
@@ -209,7 +212,9 @@ export function AuraFindApp() {
         onLogoClick={resetHome}
         onCartClick={() => {
           setMobileNavTab("cart");
-          toast.message(`${cartCount} item${cartCount === 1 ? "" : "s"} in cart`);
+          toast.message(
+            `${cartCount} item${cartCount === 1 ? "" : "s"} in cart`,
+          );
         }}
         onProfileClick={() => {
           setMobileNavTab("profile");
@@ -223,9 +228,9 @@ export function AuraFindApp() {
         className="sticky top-[57px] z-40 border-b border-neutral-200/80 bg-neutral-50/95 px-4 py-3 backdrop-blur-xl md:hidden dark:border-neutral-800 dark:bg-neutral-950/95"
       >
         <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-neutral-500">
-          AI Visual Search
+          Find products
         </p>
-        <SearchPanel {...searchPanelProps} alwaysShowSlider />
+        <SearchPanel {...searchPanelProps} />
       </div>
 
       <AnimatePresence mode="wait">
@@ -249,57 +254,20 @@ export function AuraFindApp() {
             transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
             className="mx-auto max-w-[1600px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8"
           >
-            <motion.div
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-              className="mb-6 flex flex-wrap items-center gap-2 rounded-2xl border border-neutral-200/80 bg-white/70 px-3 py-2.5 backdrop-blur-xl sm:mb-8 sm:gap-3 sm:px-5 sm:py-3 dark:border-neutral-800 dark:bg-neutral-900/70"
+            <div
+              className="mb-6 flex items-baseline justify-between gap-4"
+              aria-live="polite"
             >
-              <div className="flex items-center gap-2 text-xs text-neutral-700 sm:text-sm dark:text-neutral-200">
-                <Sparkles className="h-4 w-4 shrink-0 text-violet-500" />
-                {isLoading ? (
-                  <span>Searching vector index…</span>
-                ) : (
-                  <span>
-                    Found{" "}
-                    <strong className="font-semibold tabular-nums">
-                      {results.length}
-                    </strong>{" "}
-                    results
-                    {latencyMs !== null && activeDimension !== null && (
-                      <>
-                        {" "}
-                        in{" "}
-                        <strong className="tabular-nums">
-                          {latencyMs.toFixed(1)} ms
-                        </strong>{" "}
-                        using{" "}
-                        <strong className="tabular-nums">
-                          {activeDimension}
-                        </strong>
-                        -dim vectors
-                      </>
-                    )}
-                  </span>
-                )}
-              </div>
-
-              {!isLoading && latencyMs !== null && activeDimension !== null && (
-                <>
-                  <span className="hidden h-4 w-px bg-neutral-200 md:block dark:bg-neutral-700" />
-                  <div className="hidden items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs text-neutral-600 md:flex dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
-                    <Zap className="h-3.5 w-3.5 text-emerald-500" />
-                    <span className="tabular-nums">{latencyMs.toFixed(1)} ms</span>
-                  </div>
-                  <div className="hidden items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs text-neutral-600 md:flex dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-300">
-                    <Cpu className="h-3.5 w-3.5 text-violet-500" />
-                    <span className="tabular-nums">
-                      {activeDimension}-dim vectors
-                    </span>
-                  </div>
-                </>
+              <h2 className="text-lg font-semibold tracking-tight sm:text-xl">
+                {isLoading ? "Searching for products…" : "Search results"}
+              </h2>
+              {!isLoading && !error && (
+                <p className="text-sm text-neutral-500">
+                  {results.length}{" "}
+                  {results.length === 1 ? "product" : "products"}
+                </p>
               )}
-            </motion.div>
+            </div>
 
             {error && !isLoading && (
               <div className="mb-6 flex items-start gap-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
@@ -328,7 +296,8 @@ export function AuraFindApp() {
             {!isLoading && !error && results.length === 0 && (
               <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-300 py-16 text-center dark:border-neutral-700">
                 <p className="text-sm text-neutral-500">
-                  No results yet. Refine your search or adjust AI precision.
+                  No matching products. Try a different description or upload an
+                  image.
                 </p>
               </div>
             )}
@@ -343,7 +312,9 @@ export function AuraFindApp() {
         onSearch={scrollToMobileSearch}
         onCart={() => {
           setMobileNavTab("cart");
-          toast.message(`${cartCount} item${cartCount === 1 ? "" : "s"} in cart`);
+          toast.message(
+            `${cartCount} item${cartCount === 1 ? "" : "s"} in cart`,
+          );
         }}
         onProfile={() => {
           setMobileNavTab("profile");

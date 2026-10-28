@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Plus, Sparkles } from "lucide-react";
+import { Plus, Sparkles, Star } from "lucide-react";
 import { useEffect, useState } from "react";
 import { getImageUrl, type EnrichedProduct } from "./types";
 
@@ -59,12 +59,12 @@ export function ProductCard({
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <motion.img
             src={getImageUrl(product.product_id)}
-            alt={product.caption}
+            alt={product.displayName}
             crossOrigin="anonymous"
             loading="lazy"
             animate={{ scale: imageScale }}
             transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-            className="h-full w-full object-cover"
+            className="h-full w-full bg-white object-contain"
           />
 
           {isScanning && (
@@ -85,10 +85,6 @@ export function ProductCard({
               </div>
             </motion.div>
           )}
-
-          <span className="absolute bottom-2 left-2 rounded-full border border-white/20 bg-black/45 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-white backdrop-blur-md sm:bottom-3 sm:left-3 sm:px-2.5 sm:py-1 sm:text-[11px]">
-            {product.matchScore}% Match
-          </span>
 
           <button
             type="button"
@@ -119,13 +115,56 @@ export function ProductCard({
         </div>
       </div>
 
-      <div className="mt-2 px-0.5 sm:mt-3 sm:px-1">
-        <h3 className="line-clamp-2 text-xs font-medium text-neutral-900 sm:text-sm dark:text-white">
-          {product.caption}
+      <div className="space-y-2 px-0.5 pb-1 pt-3 sm:px-1">
+        {product.displayBrand && (
+          <p className="truncate text-xs font-medium text-neutral-500 dark:text-neutral-400">
+            {product.displayBrand}
+          </p>
+        )}
+        <h3
+          title={product.displayName}
+          className="line-clamp-2 min-h-10 text-sm font-medium leading-5 text-neutral-900 dark:text-white"
+        >
+          {product.displayName}
         </h3>
-        <p className="mt-0.5 text-xs tabular-nums text-neutral-500 sm:text-sm">
-          {product.price}
-        </p>
+        {product.ratingAverage !== null ? (
+          <div
+            className="flex flex-wrap items-center gap-1.5 text-xs"
+            aria-label={`${product.ratingAverage} out of 5 stars, ${product.reviewCount} reviews`}
+          >
+            <span className="flex gap-0.5 text-amber-500" aria-hidden="true">
+              {Array.from({ length: 5 }, (_, i) => (
+                <span key={i} className="relative block h-3.5 w-3.5">
+                  <Star className="h-3.5 w-3.5" />
+                  <span
+                    className="absolute inset-y-0 left-0 overflow-hidden"
+                    style={{
+                      width: `${Math.max(0, Math.min(1, product.ratingAverage! - i)) * 100}%`,
+                    }}
+                  >
+                    <Star className="h-3.5 w-3.5 fill-current" />
+                  </span>
+                </span>
+              ))}
+            </span>
+            <span className="tabular-nums text-neutral-600 dark:text-neutral-300">
+              {product.ratingAverage.toFixed(1)} ({product.reviewCount})
+            </span>
+          </div>
+        ) : (
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            No reviews yet
+          </p>
+        )}
+        {product.displayPrice ? (
+          <p className="text-base font-semibold tabular-nums tracking-tight text-neutral-900 sm:text-lg dark:text-white">
+            {product.displayPrice}
+          </p>
+        ) : (
+          <p className="text-sm font-medium text-neutral-500 dark:text-neutral-400">
+            Price unavailable
+          </p>
+        )}
       </div>
     </motion.article>
   );
