@@ -1,31 +1,3 @@
-"""
-Training Pipeline for Fixed Feature (FF) Baselines
-===================================================
-Trains independent models fixed at individual dimensions D in {16, 32, 64, 128, 256, 512}
-to serve as traditional Fixed Feature baselines for proving MRL effectiveness.
-
-Each FF model is trained completely independently, starting from raw CLIP
-pretrained weights (NOT from any MRL checkpoint), so it can serve as a fair,
-independent oracle upper bound when compared against MRL nested embeddings.
-
-Hyperparameters exactly match `train_v3.py` for fair, apples-to-apples comparison:
-    - BATCH_SIZE     = 64
-    - LR             = 3e-6
-    - TEMPERATURE    = 0.05
-    - HARD_NEG_RATIO = 0.3
-    - NUM_EPOCHS     = 15
-
-Usage:
-    # Train a single dimension (e.g. 64):
-    python train_ff.py --dim 64
-
-    # Train all dimensions sequentially (16, 32, 64, 128, 256, 512):
-    python train_ff.py --all
-
-    # Run on Google Colab with custom paths if needed:
-    python train_ff.py --dim 64 --checkpoint_dir /content/drive/MyDrive/checkpoints
-"""
-
 import argparse
 import json
 import os

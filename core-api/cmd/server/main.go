@@ -18,7 +18,6 @@ import (
 
 // TODO: check the MRL dim list in train file is that the same?
 var supportedMRLDimensions = map[int]struct{}{
-	8:   {},
 	16:  {},
 	32:  {},
 	64:  {},

@@ -1,21 +1,3 @@
-"""
-extract_features_fashiongen.py — Phase 3: Feature Extraction for FashionGen.
-
-Runs the MRL CLIP model over the full FashionGen validation set (32,528 items),
-saves 512-dim image + text embeddings to disk.
-
-The benchmark script (Phase 4) then slices these 512-dim vectors down to any
-MRL sub-dimension [16, 32, 64, 128, 256, 512] without re-running the model.
-
-Supports two modes:
-  - Zero-shot : no checkpoint argument, uses raw pretrained CLIP weights.
-  - Fine-tuned: pass --checkpoint path/to/mrl_fashiongen_best.pt
-
-Usage:
-  python extract_features_fashiongen.py                           # zero-shot
-  python extract_features_fashiongen.py --checkpoint checkpoints/mrl_fashiongen_best.pt
-"""
-
 import argparse
 import json
 import os
@@ -29,17 +11,17 @@ from model import MRL_CrossModal_Model
 
 # helper function to load model 
 def load_model(checkpoint_path: str | None, device: str) -> MRL_CrossModal_Model: #the output expected is a MRL_CrossModal_Model
-    model = MRL_CrossModal_Model().to(device)
+    model = MRL_CrossModal_Model(model_name=cfg.CLIP_MODEL_NAME).to(device)
 
     if checkpoint_path and os.path.exists(checkpoint_path):
         model.load_state_dict(torch.load(checkpoint_path, map_location=device))
-        print(f"    -> Loaded fine-tuned weights: {checkpoint_path}")
+        print(f"-> Loaded fine-tuned weights: {checkpoint_path}")
     else:
         if checkpoint_path:
-            print(f"    -> WARNING: checkpoint not found at '{checkpoint_path}'.")
-        print(f"    -> Using zero-shot CLIP weights (openai/clip-vit-base-patch32).")
+            print(f"-> WARNING: checkpoint not found at '{checkpoint_path}'.")
+        print(f"-> Using zero-shot CLIP weights (openai/clip-vit-base-patch16).")
 
-    model.eval()
+    model.eval() 
     return model
 
 # main extraction function
@@ -52,12 +34,14 @@ def extract_and_save(checkpoint_path: str | None = None):
     model = load_model(checkpoint_path, device)
 
     print("Building val DataLoader...")
+    batch_size = 128 if device == "cuda" else 32
+    num_workers = 2 if device == "cuda" else 0
     _, val_loader = create_fashiongen_dataloaders(
-        batch_size = 128,   # larger = faster on GPU; safe for 4GB VRAM #TODO: check if this too large
-        num_workers = 2,
+        batch_size  = batch_size,
+        num_workers = num_workers,
     )
     n_items = len(val_loader.dataset)  # type: ignore
-    print(f" -> Val items: {n_items:,} | Batches: {len(val_loader)}")
+    print(f"-> Val items: {n_items:,} | Batches: {len(val_loader)}")
 
     print(f"\nExtracting 512-dim features for {n_items:,} val items...")
     all_img_feats = []
@@ -78,9 +62,6 @@ def extract_and_save(checkpoint_path: str | None = None):
             all_img_feats.append(img_feats.cpu())
             all_txt_feats.append(txt_feats.cpu())
             all_product_ids.extend(product_ids)
-
-            #batch_size = val_loader.batch_size or 1
-            #n_batches = len(val_loader)
 
             # Progress
             if (batch_idx + 1) % 20 == 0 or (batch_idx + 1) == len(val_loader):

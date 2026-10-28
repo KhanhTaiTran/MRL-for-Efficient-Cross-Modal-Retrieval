@@ -1,16 +1,3 @@
-"""
-dataset_fashiongen.py — PyTorch Dataset and DataLoaders for FashionGen.
-
-Design:
-  - FashionGenDataset: loads (image_tensor, input_ids, attention_mask, product_id)
-    from a pre-extracted folder of JPEGs + metadata.csv.
-  - create_fashiongen_dataloaders(): returns train_loader, val_loader.
-    The val_loader preserves product_ids for grouped-recall evaluation.
-
-CSV schema (produced by scripts/extract_fashiongen_h5.py):
-  image_path, text, product_id, category, subcategory
-"""
-
 import ast
 import os
 from typing import List, Optional, Tuple
@@ -33,17 +20,28 @@ def _clean_product_id(raw: str) -> str:
 
 # load CSV and filter out rows with missing text or missing image files
 def _load_csv(csv_path: str, img_root: str) -> pd.DataFrame:
+    if not os.path.exists(csv_path):
+        raise FileNotFoundError(f"[ERROR] Metadata CSV not found at: {csv_path}")
     df = pd.read_csv(csv_path, dtype=str)
     df["product_id"] = df["product_id"].apply(_clean_product_id)
     df["abs_path"]   = df["image_path"].apply(
-        lambda p: os.path.join(img_root, os.path.basename(p))
+        lambda p: os.path.join(img_root, str(p).replace("\\", "/").split("/")[-1])
     )
     # filter rows without text
     df = df[df["text"].notna() & (df["text"].str.strip() != "")].copy()
+    
     # filter rows whose image file doesn't exist
-    df = df[df["abs_path"].apply(os.path.exists)].copy() # check if the image file exists
-    df = df.reset_index(drop=True)
-    return df #return the cleaned dataframe
+    exists_mask = df["abs_path"].apply(os.path.exists)
+    n_found = exists_mask.sum()
+    if n_found == 0:
+        sample_path = df["abs_path"].iloc[0] if len(df) > 0 else "N/A"
+        raise FileNotFoundError(
+            f"\n[ERROR] 0/{len(df)} images found in '{img_root}'!\n"
+            f"Checking path: {sample_path}\n"
+            f"Please verify that images were extracted to the correct folder."
+        )
+    df = df[exists_mask].copy().reset_index(drop=True)
+    return df
 
 # preprocess image for CLIP ViT-B/32
 def clip_transform(image_size: int = cfg.IMAGE_SIZE) -> transforms.Compose:
@@ -113,15 +111,11 @@ def _collate_fn(batch):
 
 # dataloaders for training and validation
 def create_fashiongen_dataloaders(
-    batch_size  : int = cfg.BATCH_SIZE,
-    num_workers : int = cfg.NUM_WORKERS,
-    val_batch   : int = 128,
+    batch_size      : int = cfg.BATCH_SIZE,
+    num_workers     : int = cfg.NUM_WORKERS,
+    val_batch       : int = 128,
+    val_subset_size : int = 0,    # 0 = use full val set; >0 = random subset for fast early stopping
 ) -> Tuple[DataLoader, DataLoader]:
-    """
-    Returns:
-        train_loader: shuffled, drop_last=True   (contrastive training)
-        val_loader  : ordered, no shuffle         (benchmark evaluation)
-    """
     tokenizer = AutoTokenizer.from_pretrained(cfg.CLIP_MODEL_NAME)
     transform = clip_transform()
 
@@ -131,12 +125,20 @@ def create_fashiongen_dataloaders(
         tokenizer =tokenizer,
         transform =transform,
     )
+    
     val_ds = FashionGenDataset(
         csv_path  =cfg.VAL_CSV,
         img_root  =cfg.VAL_IMG_DIR,
         tokenizer =tokenizer,
         transform =transform,
     )
+
+    # Optionally limit val set to a fast subset for early stopping
+    if val_subset_size > 0 and val_subset_size < len(val_ds):
+        import random
+        indices = random.sample(range(len(val_ds)), val_subset_size)
+        val_ds = torch.utils.data.Subset(val_ds, indices)
+        print(f"    [Val] Using fast subset: {val_subset_size:,} / {len(val_ds.dataset):,} samples")  # type: ignore
 
     train_loader = DataLoader(
         train_ds,

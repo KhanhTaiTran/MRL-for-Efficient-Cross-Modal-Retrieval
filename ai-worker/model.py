@@ -3,32 +3,15 @@ import torch.nn as nn
 from transformers import CLIPModel 
 
 class MRL_CrossModal_Model(nn.Module):
-    """
-    MRL model for Cross-Modal Retrieval (Text-to-Image / Image-to-Text).
-    
-    Note (Feature of MRL):
-    The neural network architecture itself does NOT change compared to the normal model.
-    We still take the original CLIP model (or ViT/ResNet) to output a 768-dimensional vector.
-    The "Matryoshka" (nesting) property is learned passively through the Loss Function, not by adding complex layers (Linear).
-    """
     def __init__(self, model_name='openai/clip-vit-base-patch32'):
         super().__init__()
-        # Load pre-trained CLIP model from HuggingFace
         self.clip = CLIPModel.from_pretrained(model_name)
         
     def forward(self, images, input_ids, attention_mask):
-        """
-        Used for Training Process
-        """
         outputs = self.clip(pixel_values=images, input_ids=input_ids, attention_mask=attention_mask)
         return outputs.image_embeds, outputs.text_embeds
         
     def extract_image_features(self, images, dim=None):
-        """
-        Used for Inference / Retrieval.
-        This is when MRL takes effect: We can specify 'dim' to truncate the vector.
-        """
-        # Extract and project vector to common 768D space
         vision_outputs = self.clip.vision_model(pixel_values=images)
         image_embeds = self.clip.visual_projection(vision_outputs[1]) # vision_outputs[1] is pooler_output
                 
@@ -38,9 +21,6 @@ class MRL_CrossModal_Model(nn.Module):
         return image_embeds
         
     def extract_text_features(self, input_ids, attention_mask, dim=None):
-        """
-            Same as text.
-        """
         text_outputs = self.clip.text_model(input_ids=input_ids, attention_mask=attention_mask)
         text_embeds = self.clip.text_projection(text_outputs[1])
                 

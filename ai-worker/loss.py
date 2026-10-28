@@ -18,7 +18,6 @@ class Matryoshka_InfoNCE_Loss(nn.Module):
         
         total_loss = 0.0
         
-        # The most important loop of Matryoshka
         for dim in self.nesting_list:
             # 1. TRUNCATE: Only take the first 'dim' dimensions of the vector
             img_feat_m = image_features[:, :dim]
@@ -86,9 +85,12 @@ class MRL_InfoNCE_HardNeg_Loss(nn.Module):
         def apply_hard_neg_mask(logits: torch.Tensor) -> torch.Tensor:
             B = logits.shape[0]
             pos_mask = torch.eye(B, dtype=torch.bool, device=device)  
+            
+            # Use safe min value for current dtype to prevent float16 overflow under AMP
+            safe_min = torch.finfo(logits.dtype).min
 
-            # Collect negative logits per row
-            neg_logits = logits.masked_fill(pos_mask, float('-inf'))  
+            # Collect negative logits per row (mask out positives with safe_min)
+            neg_logits = logits.masked_fill(pos_mask, safe_min)  
 
             # Threshold: keep only top hard_neg_ratio of negatives
             k = max(1, int((B - 1) * self.hard_neg_ratio))
@@ -97,8 +99,8 @@ class MRL_InfoNCE_HardNeg_Loss(nn.Module):
 
             # Build mask: True = keep (positive OR hard negative)
             keep_mask = pos_mask | (neg_logits >= threshold)           
-            # Replace dropped entries with a very large negative so softmax ignores them
-            masked_logits = logits.masked_fill(~keep_mask, -1e9)
+            # Replace dropped entries with safe_min so softmax ignores them
+            masked_logits = logits.masked_fill(~keep_mask, safe_min)
             return masked_logits
 
         masked_i2t = apply_hard_neg_mask(logits_i2t) #TODO: Explain the purpose of this line
