@@ -71,6 +71,14 @@ export function AccountPage() {
             >
               View your orders
             </Link>
+            {user.role === "admin" && (
+              <Link
+                href="/admin"
+                className="ml-6 mt-6 inline-block text-sm underline underline-offset-4"
+              >
+                Manage catalog
+              </Link>
+            )}
             <form onSubmit={save} className="mt-8 space-y-5">
               <label className="block text-sm font-medium">
                 Name

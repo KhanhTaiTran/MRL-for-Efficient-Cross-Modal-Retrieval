@@ -31,7 +31,8 @@ def main():
 
     with psycopg.connect(database, autocommit=True, connect_timeout=10) as db:
         try:
-            assert db.execute('SELECT version,dirty FROM schema_migrations').fetchone() == (2, False)
+            migration, dirty = db.execute('SELECT version,dirty FROM schema_migrations').fetchone()
+            assert migration >= 2 and not dirty
             tokens = []
             for n in range(2):
                 email = f'phase2-{suffix}-{n}@aurafind.test'

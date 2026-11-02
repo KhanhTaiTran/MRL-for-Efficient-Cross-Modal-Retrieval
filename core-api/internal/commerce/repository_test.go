@@ -70,7 +70,7 @@ func TestCommerceTransactions(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	for _, name := range []string{"000001_initial_schema.up.sql", "000002_commerce.up.sql"} {
+	for _, name := range []string{"000001_initial_schema.up.sql", "000002_commerce.up.sql", "000003_catalog_admin.up.sql"} {
 		data, err := os.ReadFile(filepath.Join("..", "..", "..", "infra", "migrations", name))
 		if err != nil {
 			t.Fatal(err)

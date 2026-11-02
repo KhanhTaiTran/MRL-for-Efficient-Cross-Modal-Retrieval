@@ -11,6 +11,7 @@ ai-worker/
 │   ├── api/server.py            FastAPI startup, health, configuration and search
 │   ├── models/mrl.py           Shared CLIP/MRL model and feature extraction methods
 │   ├── retrieval/               Two-stage reranking and alpha query expansion
+│   ├── indexing/                Durable SQL catalog rebuild consumer (Compose)
 │   ├── config/fashiongen.py     Dataset paths and FashionGen experiment settings
 │   ├── datasets/               FashionGen and earlier fashion dataset loaders
 │   ├── training/               Training loops and losses
@@ -53,6 +54,11 @@ default ports are 18001/18080; set `TEST_INFER_PORT` and `TEST_API_PORT` if occu
 
 Docker uses `ai_worker.api.server:app` directly. Compose build/run commands are
 unchanged; rebuild the AI image after this source reorganization.
+
+Phase 3 adds the `index-worker` Compose service (`python -m
+ai_worker.indexing.worker`). It builds immutable catalog snapshots from SQL/MinIO
+and inference polls SQL for validated live activation. Native runs without
+`DATABASE_URL` keep their original manifest. See [Phase 3](../notes/phase3.md).
 
 ## Research commands
 

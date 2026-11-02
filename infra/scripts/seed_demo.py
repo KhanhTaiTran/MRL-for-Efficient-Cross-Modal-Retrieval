@@ -67,6 +67,12 @@ def illustration(kind,color):
 
 
 def main():
+    # A normal Compose restart must not replace an administratively rebuilt catalog.
+    with psycopg.connect(os.environ['DATABASE_URL']) as db:
+        active = db.execute('SELECT metadata FROM ai_index_versions WHERE is_active').fetchone()
+        if active and active[0].get('dataset_split') == 'catalog':
+            print('Managed catalog index already exists; preserving catalog, stock and active version.', flush=True)
+            return
     print("Preparing demo storage and catalog fixtures...",flush=True)
     torch.set_num_threads(1)
     out=Path(os.environ.get('VECTOR_DB_DIR','/data/vector_db'));out.mkdir(parents=True,exist_ok=True)

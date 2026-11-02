@@ -12,6 +12,7 @@ if __name__ == '__main__':
     folder=WORKER_ROOT
     env={**os.environ,'HF_HUB_OFFLINE':'1','TRANSFORMERS_OFFLINE':'1','OMP_NUM_THREADS':'1','MKL_NUM_THREADS':'1'}
     subprocess.run([sys.executable,'-u','-m','tests.test_readiness'],cwd=folder,env=env,check=True)
+    subprocess.run([sys.executable,'-u','-m','tests.test_index_reload'],cwd=folder,env=env,check=True)
     subprocess.run([sys.executable,'-u','-m','tests.test_search_regression'],cwd=folder,env=env,check=True)
     if args.e2e:
         subprocess.run([sys.executable,'-u','-m','tests.test_search_e2e'],cwd=folder,env=env,check=True)

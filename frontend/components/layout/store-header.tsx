@@ -17,6 +17,7 @@ export function StoreHeader() {
         <div className="flex items-center gap-6 text-sm">
           <Link href="/search">Shop</Link>
           <Link href="/cart">Cart</Link>
+          {user?.role === "admin" && <Link href="/admin">Admin</Link>}
           <Link href="/account">{user ? user.name : "Account"}</Link>
         </div>
       </nav>

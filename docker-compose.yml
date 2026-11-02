@@ -93,6 +93,7 @@ services:
     <<: *ai
     environment:
       <<: *ai-env
+      DATABASE_URL: postgres://aurafind:${POSTGRES_PASSWORD:-aurafind_dev}@postgres:5432/aurafind
       HF_HUB_OFFLINE: "1"
       TRANSFORMERS_OFFLINE: "1"
     depends_on:
@@ -112,6 +113,9 @@ services:
       IMG_BASE_DIR: /data/images
       CORS_ORIGINS: http://localhost:${FRONTEND_PORT:-3000},http://127.0.0.1:${FRONTEND_PORT:-3000}
       PUBLIC_MEDIA_BASE_URL: ${PUBLIC_MEDIA_BASE_URL:-http://localhost:9000/products}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-aurafind_dev}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-aurafind_dev_secret}
       SMTP_HOST: mailhog
       SMTP_PORT: "1025"
       SMTP_FROM: ${SMTP_FROM:-noreply@aurafind.local}
@@ -159,6 +163,22 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+  index-worker:
+    <<: *ai
+    command: ["python", "-m", "ai_worker.indexing.worker"]
+    environment:
+      <<: *ai-env
+      DATABASE_URL: postgres://aurafind:${POSTGRES_PASSWORD:-aurafind_dev}@postgres:5432/aurafind
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-aurafind_dev}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-aurafind_dev_secret}
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      seed: { condition: service_completed_successfully }
+      minio: { condition: service_healthy }
+    restart: unless-stopped
   verify:
     <<: *ai
     volumes: [./infra:/app/infra:ro]

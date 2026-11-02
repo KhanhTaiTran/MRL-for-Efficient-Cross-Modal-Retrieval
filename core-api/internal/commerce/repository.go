@@ -160,7 +160,7 @@ func (r *Repository) cart(ctx context.Context, q querier, user string, locked bo
 		suffix += " FOR UPDATE OF p,v,c"
 	}
 	rows, err := q.Query(ctx, `SELECT v.id::text,p.id::text,p.handle,p.name,COALESCE(v.sku,''),v.size,v.color,
- COALESCE((SELECT object_key FROM product_images WHERE product_id=p.id ORDER BY is_primary DESC,position,id LIMIT 1),''),
+ COALESCE((SELECT object_key FROM product_images WHERE product_id=p.id AND is_active ORDER BY is_primary DESC,position,id LIMIT 1),''),
  (v.price*100)::bigint,c.quantity,v.stock,(p.is_active AND v.is_available),p.currency
  FROM cart_items c JOIN product_variants v ON v.id=c.variant_id JOIN products p ON p.id=v.product_id WHERE c.user_id=$1`+suffix, user)
 	if err != nil {

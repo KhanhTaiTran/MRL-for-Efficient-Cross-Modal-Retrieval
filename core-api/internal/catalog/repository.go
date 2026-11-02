@@ -67,7 +67,7 @@ func (r *Repository) ImageURL(key string) string {
 }
 
 const fields = `p.id::text,p.handle,p.name,COALESCE(p.description,''),COALESCE(p.brand,''),COALESCE(p.category,''),p.base_price::float8,p.currency,COALESCE(img.object_key,''),COALESCE(rv.count,0)::int,rv.average,p.is_featured,p.search_status,COALESCE(p.default_variant_id::text,'')`
-const joins = ` LEFT JOIN LATERAL (SELECT object_key FROM product_images WHERE product_id=p.id ORDER BY is_primary DESC,position,id LIMIT 1) img ON true LEFT JOIN LATERAL (SELECT count(*) count,avg(rating)::float8 average FROM reviews WHERE product_id=p.id AND NOT is_hidden) rv ON true `
+const joins = ` LEFT JOIN LATERAL (SELECT object_key FROM product_images WHERE product_id=p.id AND is_active ORDER BY is_primary DESC,position,id LIMIT 1) img ON true LEFT JOIN LATERAL (SELECT count(*) count,avg(rating)::float8 average FROM reviews WHERE product_id=p.id AND NOT is_hidden) rv ON true `
 
 func (r *Repository) scan(row pgx.Row) (Product, error) {
 	var p Product
@@ -110,7 +110,7 @@ func (r *Repository) Get(ctx context.Context, handle string) (Product, error) {
 	if err != nil {
 		return p, err
 	}
-	rows, err := r.DB.Query(ctx, "SELECT id::text,object_key,COALESCE(alt_text,''),is_primary FROM product_images WHERE product_id=$1 ORDER BY is_primary DESC,position,id", p.ID)
+	rows, err := r.DB.Query(ctx, "SELECT id::text,object_key,COALESCE(alt_text,''),is_primary FROM product_images WHERE product_id=$1 AND is_active ORDER BY is_primary DESC,position,id", p.ID)
 	if err != nil {
 		return p, err
 	}
@@ -181,7 +181,7 @@ func (r *Repository) Enrich(ctx context.Context, version string, results []model
 	rows, err := r.DB.Query(ctx, `SELECT m.vector_id,p.id::text,p.handle,p.name,COALESCE(p.brand,''),p.base_price::float8,p.currency,pi.object_key,COALESCE(rv.count,0)::int,rv.average
  FROM index_vector_mappings m JOIN product_images pi ON pi.id=m.product_image_id JOIN products p ON p.id=pi.product_id
  LEFT JOIN LATERAL (SELECT count(*) count,avg(rating)::float8 average FROM reviews WHERE product_id=p.id AND NOT is_hidden) rv ON true
- WHERE m.index_version_id=$1 AND m.vector_id=ANY($2::int[]) AND p.is_active`, id, ids)
+ WHERE m.index_version_id=$1 AND m.vector_id=ANY($2::int[]) AND p.is_active AND pi.is_active`, id, ids)
 	if err != nil {
 		return nil, err
 	}

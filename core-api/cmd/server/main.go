@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"core-api/internal/admin"
 	"core-api/internal/api"
 	"core-api/internal/auth"
 	"core-api/internal/broker"
@@ -16,6 +17,8 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 func main() {
@@ -135,11 +138,20 @@ func main() {
 			log.Fatal(err)
 		}
 		authHandler.RegisterRoutes(apiGroup)
+		var store *minio.Client
+		if endpoint := os.Getenv("MINIO_ENDPOINT"); endpoint != "" {
+			store, err = minio.New(endpoint, &minio.Options{Creds: credentials.NewStaticV4(os.Getenv("MINIO_ACCESS_KEY"), os.Getenv("MINIO_SECRET_KEY"), ""), Secure: os.Getenv("MINIO_SECURE") == "true"})
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+		api.NewAdminHandler(&admin.Repository{DB: db, MediaBase: mediaBase}, store).RegisterRoutes(apiGroup, authHandler)
 		api.NewCommerceHandler(&commerce.Repository{DB: db, MediaBase: mediaBase}).RegisterRoutes(apiGroup, authHandler)
 	} else {
 		apiGroup.Any("/products", func(c *gin.Context) { c.JSON(503, gin.H{"error": "Catalog requires DATABASE_URL"}) })
 		apiGroup.Any("/products/*path", func(c *gin.Context) { c.JSON(503, gin.H{"error": "Catalog requires DATABASE_URL"}) })
 		apiGroup.Any("/auth/*path", func(c *gin.Context) { c.JSON(503, gin.H{"error": "Accounts require DATABASE_URL"}) })
+		apiGroup.Any("/admin/*path", func(c *gin.Context) { c.JSON(503, gin.H{"error": "Administration requires DATABASE_URL"}) })
 		for _, path := range []string{"/cart", "/cart/*path", "/checkout", "/orders", "/orders/*path"} {
 			apiGroup.Any(path, func(c *gin.Context) {
 				c.JSON(503, gin.H{"error": "Shopping requires DATABASE_URL", "code": "service_unavailable"})

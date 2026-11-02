@@ -1,6 +1,6 @@
 # AuraFind: MRL cross-modal retrieval
 
-The project combines a Next.js storefront, a Go gateway and a Python CLIP/FAISS service. Search is HTTP request/response. RabbitMQ is reserved for background indexing jobs; it is not in the search path.
+The project combines a Next.js storefront, a Go gateway and a Python CLIP/FAISS service. Search is HTTP request/response. Phase 3 uses a durable PostgreSQL queue for background indexing; optional RabbitMQ is outside the search path.
 
 ## Phase notes
 
@@ -8,6 +8,7 @@ The project combines a Next.js storefront, a Go gateway and a Python CLIP/FAISS 
 - [Phase 0 infrastructure](notes/phase0.md)
 - [Phase 1 authentication and catalog](notes/phase1.md)
 - [Phase 2 cart, mock checkout and customer orders](notes/phase2.md)
+- [Phase 3 catalog administration and live index rebuilds](notes/phase3.md)
 
 The storefront uses English. MRL controls and timing are developer tools, not shopping UI.
 
@@ -41,7 +42,7 @@ docker compose logs --tail 30 ai-worker core-api
 docker compose run --rm seed
 ```
 
-Re-seeding is intended for a stopped inference service; it replaces the demo index and keeps catalog IDs stable. Restart inference after a reseed. Live rebuild/hot-swap is a later phase.
+Use `/admin` for catalog management and live background index rebuilds (Phase 3). Rebuilds retain historical artifacts/mappings and activate without restarting search. Before the first managed rebuild, re-seeding is intended for stopped inference and replaces the seed demo index; restart inference afterward. Once a managed catalog index is active, seed exits without overwriting it.
 
 ```sh
 docker compose stop ai-worker core-api frontend
@@ -59,7 +60,7 @@ docker compose --profile tools run --rm --no-deps verify
 
 To test on separate ports while native FashionGen is running, use `--env-file infra/test.env.example` on every Compose command. This uses storefront 13000, gateway 18080, PostgreSQL 15432, storage 19000/19001 and mail 11025/18025.
 
-Enable the optional broker with `docker compose --profile jobs up -d rabbitmq`. A background consumer is not implemented in Phase 0.
+Phase 3 runs `index-worker` by default and uses PostgreSQL as its durable background queue. RabbitMQ remains optional (`docker compose --profile jobs up -d rabbitmq`) and is not required for indexing or search.
 
 ## Current FashionGen research/local app
 

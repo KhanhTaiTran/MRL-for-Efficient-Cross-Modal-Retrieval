@@ -5,6 +5,9 @@ import json
 import time
 import hashlib
 import asyncio
+import logging
+from pathlib import Path
+from contextlib import suppress
 from contextlib import asynccontextmanager
 from typing import Optional, List, Dict, Any, Tuple
 
@@ -28,6 +31,7 @@ from ai_worker.paths import worker_path
 DEFAULT_CKPT = "checkpoints/mrl_fashiongen_latest.pt"
 CHECKPOINT_PATH = str(worker_path(os.environ.get("CHECKPOINT_PATH", DEFAULT_CKPT)))
 VECTOR_DB_DIR = str(worker_path(os.environ.get("VECTOR_DB_DIR", "vector_db")))
+INDEX_ROOT = VECTOR_DB_DIR
 DEFAULT_DIMENSION = 512
 MAX_LENGTH = 77
 TOKENIZER_NAME = "openai/clip-vit-base-patch32"
@@ -105,7 +109,11 @@ def validate_model_index_consistency(meta: Dict[str, Any], checkpoint_path: str,
 
 
 def setup_inference_engine():
-    global CHECKPOINT_PATH
+    global CHECKPOINT_PATH, VECTOR_DB_DIR
+    if os.environ.get("DATABASE_URL"):
+        selected = catalog_index_path()
+        if selected:
+            VECTOR_DB_DIR = selected
     if not os.path.isfile(os.path.join(VECTOR_DB_DIR, "image_embeddings.index")):
         state["model"] = None
         state["image_indexes"] = {}
@@ -230,13 +238,84 @@ def setup_inference_engine():
     print("=" * 60)
 
 
+def catalog_index_path():
+    import psycopg
+    with psycopg.connect(os.environ["DATABASE_URL"], connect_timeout=3, options="-c statement_timeout=5000") as db:
+        row = db.execute("SELECT index_path FROM ai_index_versions WHERE is_active").fetchone()
+    if not row:
+        return None
+    root = Path(INDEX_ROOT).resolve()
+    path = Path(row[0]).resolve()
+    if not path.is_relative_to(root):
+        raise RuntimeError("Catalog index path is outside the managed index root")
+    return str(path)
+
+
+def load_catalog_snapshot(folder):
+    """Validate a complete immutable candidate without changing the live engine."""
+    root = Path(folder)
+    meta = json.loads((root / "index_meta.json").read_text(encoding="utf-8"))
+    if meta["index_version"] == state["active_version"]:
+        return None
+    if meta.get("checkpoint_sha256") != state["meta"].get("checkpoint_sha256"):
+        raise RuntimeError("Live reload cannot switch model checkpoints; restart with the selected checkpoint")
+    for filename, field in [("image_embeddings.index", "image_index_sha256"), ("text_embeddings.index", "text_index_sha256"), ("image_paths.json", "image_paths_sha256"), ("captions.json", "captions_sha256"), ("product_ids.json", "product_ids_sha256")]:
+        if not meta.get(field) or _sha256_file(root / filename) != meta[field]:
+            raise RuntimeError(f"Invalid candidate artifact: {filename}")
+    index = faiss.read_index(str(root / "image_embeddings.index"))
+    if index.d != 512 or not index.ntotal:
+        raise RuntimeError("Candidate must contain nonempty 512D vectors")
+    validate_model_index_consistency(meta, meta["checkpoint_path"], index.ntotal, state["model_name"])
+    paths = json.loads((root / "image_paths.json").read_text())
+    captions = json.loads((root / "captions.json").read_text())
+    ids = json.loads((root / "product_ids.json").read_text())
+    if any(len(values) != index.ntotal for values in (paths, captions, ids)):
+        raise RuntimeError("Candidate mapping count mismatch")
+    vectors = _extract_raw_vectors(index)
+    if not np.isfinite(vectors).all():
+        raise RuntimeError("Candidate contains invalid vectors")
+    indexes = {}
+    for dim in meta["supported_dims"]:
+        truncated = vectors[:, :dim].copy()
+        faiss.normalize_L2(truncated)
+        sub = faiss.IndexFlatIP(dim)
+        sub.add(truncated)
+        indexes[dim] = sub
+    candidate = dict(state)
+    candidate.update(meta=meta, active_version=meta["index_version"], supported_dims=meta["supported_dims"], image_indexes=indexes, db_vecs_512=torch.tensor(vectors, dtype=torch.float32), image_paths=paths, captions=captions, product_ids=ids)
+    return candidate
+
+
+async def watch_catalog_index():
+    global state
+    while True:
+        try:
+            folder = await asyncio.to_thread(catalog_index_path)
+            if folder:
+                candidate = await asyncio.to_thread(load_catalog_snapshot, folder)
+                if candidate:
+                    # Assignment publishes one engine reference. In-flight searches keep theirs.
+                    state = candidate
+                    logging.info("Activated catalog index %s", state["active_version"])
+        except Exception:
+            logging.exception("Catalog reload rejected; retaining the previous engine")
+        await asyncio.sleep(3)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global semaphore
     semaphore = asyncio.Semaphore(INFERENCE_CONCURRENCY)
     setup_inference_engine()
-    yield
-    print("[*] Shutting down Inference Engine...")
+    watcher = asyncio.create_task(watch_catalog_index()) if os.environ.get("DATABASE_URL") else None
+    try:
+        yield
+    finally:
+        if watcher:
+            watcher.cancel()
+            with suppress(asyncio.CancelledError):
+                await watcher
+        print("[*] Shutting down Inference Engine...")
 
 
 app = FastAPI(title="AuraFind AI Inference Engine", version="2.0", lifespan=lifespan)
@@ -244,15 +323,16 @@ app = FastAPI(title="AuraFind AI Inference Engine", version="2.0", lifespan=life
 # Synchronous Inference Workers (executed in thread pool)
 
 def execute_text_search(text_query: str, target_dim: int, search_mode: str) -> Dict[str, Any]:
+    snapshot = state
     t_start = time.perf_counter()
-    model = state["model"]
-    tokenizer = state["tokenizer"]
-    device = state["device"]
-    image_indexes = state["image_indexes"]
-    db_vecs_512 = state["db_vecs_512"]
-    reranker = state["reranker"]
-    aqe_expander = state["aqe_expander"]
-    captions = state["captions"]
+    model = snapshot["model"]
+    tokenizer = snapshot["tokenizer"]
+    device = snapshot["device"]
+    image_indexes = snapshot["image_indexes"]
+    db_vecs_512 = snapshot["db_vecs_512"]
+    reranker = snapshot["reranker"]
+    aqe_expander = snapshot["aqe_expander"]
+    captions = snapshot["captions"]
 
     # 1. Tokenize & Encode
     t_enc_start = time.perf_counter()
@@ -320,8 +400,8 @@ def execute_text_search(text_query: str, target_dim: int, search_mode: str) -> D
         caption = captions[idx] if idx < len(captions) else ""
         data.append({
             "vector_id": idx,
-            "product_id": state["image_paths"][idx],
-            "catalog_product_id": state.get("product_ids", state["image_paths"])[idx],
+            "product_id": snapshot["image_paths"][idx],
+            "catalog_product_id": snapshot.get("product_ids", snapshot["image_paths"])[idx],
             "similarity_score": round(float(score), 4),
             "caption": caption
         })
@@ -329,7 +409,7 @@ def execute_text_search(text_query: str, target_dim: int, search_mode: str) -> D
     worker_total_ms = round((time.perf_counter() - t_start) * 1000, 2)
     return {
         "status": "success",
-        "index_version": state["active_version"],
+        "index_version": snapshot["active_version"],
         "data": data,
         "search_config": {
             "requested_dim": target_dim,
@@ -349,14 +429,15 @@ def execute_text_search(text_query: str, target_dim: int, search_mode: str) -> D
 
 
 def execute_image_search(image_bytes: bytes, target_dim: int, search_mode: str) -> Dict[str, Any]:
+    snapshot = state
     t_start = time.perf_counter()
-    model = state["model"]
-    transform = state["transform"]
-    device = state["device"]
-    image_indexes = state["image_indexes"]
-    db_vecs_512 = state["db_vecs_512"]
-    reranker = state["reranker"]
-    captions = state["captions"]
+    model = snapshot["model"]
+    transform = snapshot["transform"]
+    device = snapshot["device"]
+    image_indexes = snapshot["image_indexes"]
+    db_vecs_512 = snapshot["db_vecs_512"]
+    reranker = snapshot["reranker"]
+    captions = snapshot["captions"]
 
     # 1. Decode & Preprocess & Encode
     t_enc_start = time.perf_counter()
@@ -409,8 +490,8 @@ def execute_image_search(image_bytes: bytes, target_dim: int, search_mode: str) 
         caption = captions[idx] if idx < len(captions) else ""
         data.append({
             "vector_id": idx,
-            "product_id": state["image_paths"][idx],
-            "catalog_product_id": state.get("product_ids", state["image_paths"])[idx],
+            "product_id": snapshot["image_paths"][idx],
+            "catalog_product_id": snapshot.get("product_ids", snapshot["image_paths"])[idx],
             "similarity_score": round(float(score), 4),
             "caption": caption
         })
@@ -418,7 +499,7 @@ def execute_image_search(image_bytes: bytes, target_dim: int, search_mode: str) 
     worker_total_ms = round((time.perf_counter() - t_start) * 1000, 2)
     return {
         "status": "success",
-        "index_version": state["active_version"],
+        "index_version": snapshot["active_version"],
         "data": data,
         "search_config": {
             "requested_dim": target_dim,

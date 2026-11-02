@@ -48,13 +48,16 @@ func TestEnrichmentVersionIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "infra", "migrations", "000001_initial_schema.up.sql"))
-	if err != nil {
-		t.Fatal(err)
+	for _, name := range []string{"000001_initial_schema.up.sql", "000002_commerce.up.sql", "000003_catalog_admin.up.sql"} {
+		migration, err := os.ReadFile(filepath.Join("..", "..", "..", "infra", "migrations", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = db.Exec(ctx, string(migration)); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if _, err = db.Exec(ctx, string(migration)); err != nil {
-		t.Fatal(err)
-	}
+
 	var a, b, aa, ab, ba, versionA, versionB string
 	for _, v := range []struct {
 		sql string
