@@ -12,6 +12,7 @@ import (
 	"core-api/internal/auth"
 	"core-api/internal/broker"
 	"core-api/internal/catalog"
+	"core-api/internal/commerce"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -69,7 +70,7 @@ func main() {
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     origins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "Idempotency-Key"},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
@@ -134,15 +135,22 @@ func main() {
 			log.Fatal(err)
 		}
 		authHandler.RegisterRoutes(apiGroup)
+		api.NewCommerceHandler(&commerce.Repository{DB: db, MediaBase: mediaBase}).RegisterRoutes(apiGroup, authHandler)
 	} else {
 		apiGroup.Any("/products", func(c *gin.Context) { c.JSON(503, gin.H{"error": "Catalog requires DATABASE_URL"}) })
 		apiGroup.Any("/products/*path", func(c *gin.Context) { c.JSON(503, gin.H{"error": "Catalog requires DATABASE_URL"}) })
 		apiGroup.Any("/auth/*path", func(c *gin.Context) { c.JSON(503, gin.H{"error": "Accounts require DATABASE_URL"}) })
+		for _, path := range []string{"/cart", "/cart/*path", "/checkout", "/orders", "/orders/*path"} {
+			apiGroup.Any(path, func(c *gin.Context) {
+				c.JSON(503, gin.H{"error": "Shopping requires DATABASE_URL", "code": "service_unavailable"})
+			})
+		}
 	}
 	searchHandler.RegisterRoutes(apiGroup)
 
 	log.Printf("[*] Core API server running on :%s (Infer API: %s)", port, inferAPIURL)
-	if err := r.Run(":" + port); err != nil {
+	server := &http.Server{Addr: ":" + port, Handler: r, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 35 * time.Second, IdleTimeout: 60 * time.Second}
+	if err := server.ListenAndServe(); err != nil {
 		log.Fatalf("Server startup failed: %v", err)
 	}
 }

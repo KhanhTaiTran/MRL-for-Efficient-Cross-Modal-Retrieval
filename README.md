@@ -7,7 +7,7 @@ The project combines a Next.js storefront, a Go gateway and a Python CLIP/FAISS 
 - [Phase -1 implementation and verification](notes/phase-minus1.md)
 - [Phase 0 infrastructure](notes/phase0.md)
 - [Phase 1 authentication and catalog](notes/phase1.md)
-- [Phase 2 cart, checkout and orders preparation](notes/phase2.md)
+- [Phase 2 cart, mock checkout and customer orders](notes/phase2.md)
 
 The storefront uses English. MRL controls and timing are developer tools, not shopping UI.
 
@@ -33,7 +33,7 @@ Startup order is PostgreSQL -> versioned migration -> demo seed -> inference -> 
 
 If the existing native FashionGen app uses 3000/8080, stop those project processes first or set API_PORT, FRONTEND_PORT and NEXT_PUBLIC_API_URL together in .env. NEXT_PUBLIC_API_URL is baked into the frontend image, so rebuild frontend after changing it.
 
-The demo has ten locally generated clothing illustrations and fictional USD prices, clearly marked as demo records in PostgreSQL. It uses real public pretrained CLIP embeddings at 512D only. It is NOT the fine-tuned MRL benchmark or a copy of FashionGen. Phase 1 provides email-verified accounts, catalog browsing/product details and SQL prices in search results. Cart/checkout and orders are later phases.
+The demo has ten locally generated clothing illustrations and fictional USD prices, clearly marked as demo records in PostgreSQL. It uses real public pretrained CLIP embeddings at 512D only. It is NOT the fine-tuned MRL benchmark or a copy of FashionGen. Phase 1 provides email-verified accounts, catalog browsing/product details and SQL prices in search results. Phase 2 adds persistent carts, mock checkout and private order history. Payment is simulated; no money is charged. Cart and checkout support USD demo products only.
 
 ```sh
 docker compose logs seed migrate

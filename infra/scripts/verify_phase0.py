@@ -22,7 +22,8 @@ def main():
         tables={r[0] for r in db.execute("SELECT tablename FROM pg_tables WHERE schemaname='public'")}
         expected={'users','otp_tokens','refresh_tokens','products','product_variants','product_images','ai_index_versions','ai_index_jobs','index_vector_mappings','orders','order_items','cart_items','reviews','review_media','wishlists'}
         assert expected<=tables,expected-tables
-        assert db.execute('SELECT version,dirty FROM schema_migrations').fetchone()==(1,False)
+        migration, dirty = db.execute('SELECT version,dirty FROM schema_migrations').fetchone()
+        assert migration >= 1 and not dirty, (migration, dirty)
         assert db.execute("SELECT count(*) FROM products WHERE metadata->>'demo'='true'").fetchone()[0]==10
         assert db.execute('SELECT count(*) FROM product_variants').fetchone()[0]==10
         version,count=db.execute('SELECT id,num_vectors FROM ai_index_versions WHERE is_active').fetchone()

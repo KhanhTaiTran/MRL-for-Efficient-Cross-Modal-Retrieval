@@ -1,7 +1,90 @@
-# Phase 2 preparation: cart, checkout and customer orders
+# Phase 2: cart, checkout and customer orders
 
 Prepared 2 November 2026. Scope follows `phase1.md`: cart/checkout are Phase 2.
-This document is an implementation contract; these endpoints are not implemented yet.
+Implemented and verified 3 November 2026. The design contract below describes
+the shipped local demo behavior.
+
+## Delivered behavior
+
+Verified accounts have a persistent PostgreSQL cart, mock checkout and private
+order history. Product details add the selected variant to the cart with an
+absolute quantity of one; the cart page supports quantities 1–99 and removal.
+The homepage cart buttons now navigate to the real cart and load its quantity.
+Account pages link to order history. Sign-in, registration and email verification
+preserve the return path.
+
+`/cart`, `/checkout`, `/account/orders` and `/account/orders/:id` use the existing
+in-memory access-token/refresh flow. Checkout clearly states that payment is
+simulated and no money is charged. Shipping is zero; USD is the only supported
+checkout currency. No real payment credentials or provider are used.
+
+Commerce responses use integer `price_cents`, `subtotal_cents`, `shipping_cents`
+and `total_cents`; SQL stores exact NUMERIC values. The order total limit is
+999,999,999,999 cents, matching NUMERIC(12,2). Carts support at most 100 variants.
+Cart reads expose `can_checkout` and per-item stock/availability.
+
+Checkout receives `{shipping_address, currency, items}`. Each item contains
+`variant_id`, `quantity` and `price_cents`. Address fields are `name`, `line1`,
+`line2`, `city`, `region`, `postal_code`, `country`; country is a two-letter code.
+Quote lines are normalized/sorted before hashing. The `Idempotency-Key` header
+is required (8–128 printable non-space ASCII characters). First success returns
+201; exact replay returns 200 with `replayed: true`; changed payload returns 409.
+Order ownership failures return 404. Responses are private (`Cache-Control:
+no-store`). Browser mutation Origins and CORS idempotency headers are checked.
+
+The checkout screen stores the original request/key in per-account tab session
+storage before sending. Network/503 failures retain it for retry, including
+after reload; definitive validation/conflict responses require a fresh review.
+Successful retries resolve to the original order even after cart clear. Closing
+the tab clears this browser recovery state. No confirmation email or durable
+email outbox is included in this phase.
+
+Migration 000002 adds the maximum cart quantity constraint. Checkout and cart
+mutations lock the owning user first; checkout locks products/variants/cart rows
+in deterministic order, validates the quote, guards stock updates, snapshots
+order items/address and clears the cart in one transaction. Commerce requests
+have a ten-second context deadline. Gateway HTTP read/header/write/idle timeouts
+are now explicit.
+
+## Verification and commands
+
+On an existing healthy Phase 1 demo stack (isolated test ports):
+
+```powershell
+docker compose --env-file infra/test.env.example run --rm --no-deps migrate
+docker compose --env-file infra/test.env.example build core-api frontend
+docker compose --env-file infra/test.env.example up -d --no-deps core-api frontend
+docker compose --env-file infra/test.env.example --profile tools run --rm --no-deps verify python /app/infra/scripts/verify_phase2.py
+docker compose --env-file infra/test.env.example --profile tools run --rm --no-deps verify python /app/infra/scripts/verify_phase1.py
+docker compose --env-file infra/test.env.example --profile tools run --rm --no-deps verify
+```
+
+For a fresh/stopped stack, follow the README startup procedure first. Do not
+reseed a running inference index to apply this phase; only migration/application
+services change. Migration 000001 remains unchanged.
+
+```powershell
+Set-Location core-api
+$env:TEST_DATABASE_URL='postgres://aurafind:aurafind_dev@localhost:15432/aurafind?connect_timeout=5'
+go test ./... -count=1
+go vet ./...
+```
+
+Verified: Go tests/vet, isolated-schema database integration tests, frontend
+TypeScript and Linux production images, and Phase 0/1/2 HTTP suites. Tests cover
+wrong quantities, stock/availability, ownership, stale/tampered quotes, concurrent
+same-key replay, different-payload conflicts, last-unit competition, injected
+mid-transaction rollback, immutable order snapshots, free/fractional prices,
+maximum supported total and the cart-update/checkout race. Database tests also
+verify competing multi-product purchases acquire locks consistently.
+Migration up/repeat/down/up passes in a fresh temporary database.
+The Phase 2 HTTP verifier creates/removes only its own temporary users/products/orders; seeded
+demo stock is untouched.
+
+Browser verification: sign-in returns to product, selected variant adds to cart,
+quantity update survives reload, address form submits a mock order, confirmation
+and order history show the exact $24.68 total, and logout succeeds. Browser-test
+fixtures are disposable and separate from seeded products.
 
 ## Preparation review
 
@@ -132,9 +215,7 @@ for a new purchase attempt, not every network retry.
 
 ## Follow-ups identified during review
 
-- `core-api/cmd/server/main.go` uses Gin `Run`, without explicit HTTP read-header,
-  write or idle timeouts. Configure an `http.Server` before public deployment;
-  checkout also needs bounded database transaction contexts.
+- Resolved in Phase 2: gateway HTTP timeouts and bounded commerce contexts.
 - OTP email currently sends while a SQL transaction is open. Slow SMTP holds the
   user lock, and a successful send followed by a failed commit can deliver an
   unusable code. Consider a transactional outbox when making delivery durable.

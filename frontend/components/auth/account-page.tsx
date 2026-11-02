@@ -65,6 +65,12 @@ export function AccountPage() {
             <p className="mt-4 text-sm text-neutral-500">
               {user.email} · Email verified
             </p>
+            <Link
+              href="/account/orders"
+              className="mt-6 inline-block text-sm underline underline-offset-4"
+            >
+              View your orders
+            </Link>
             <form onSubmit={save} className="mt-8 space-y-5">
               <label className="block text-sm font-medium">
                 Name

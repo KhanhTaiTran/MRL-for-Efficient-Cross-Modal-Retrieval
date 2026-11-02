@@ -4,8 +4,15 @@ import { useState } from "react";
 import Link from "next/link";
 import { formatPrice, type CatalogProduct } from "lib/api/catalog";
 import { StoreHeader } from "components/layout/store-header";
+import { useRouter } from "next/navigation";
+import { useAuth } from "components/auth/auth-provider";
+import { setCartItem } from "lib/api/commerce";
 
 export function ProductDetail({ product }: { product: CatalogProduct }) {
+  const router = useRouter();
+  const { user, loading } = useAuth();
+  const [adding, setAdding] = useState(false);
+  const [cartMessage, setCartMessage] = useState("");
   const [variantID, setVariantID] = useState(
     product.default_variant_id || product.variants?.[0]?.id || "",
   );
@@ -91,6 +98,46 @@ export function ProductDetail({ product }: { product: CatalogProduct }) {
                   ? "In stock"
                   : "Out of stock"}
               </p>
+              <button
+                type="button"
+                disabled={
+                  loading ||
+                  adding ||
+                  !variant?.is_available ||
+                  variant.stock < 1
+                }
+                onClick={async () => {
+                  if (!user) {
+                    router.push(
+                      `/login?next=${encodeURIComponent(`/product/${product.handle}`)}`,
+                    );
+                    return;
+                  }
+                  if (!variant) return;
+                  setAdding(true);
+                  setCartMessage("");
+                  try {
+                    await setCartItem(variant.id, 1);
+                    router.push("/cart");
+                  } catch (error) {
+                    setCartMessage(
+                      error instanceof Error
+                        ? error.message
+                        : "Please try again.",
+                    );
+                  } finally {
+                    setAdding(false);
+                  }
+                }}
+                className="mt-6 block rounded-xl bg-neutral-900 px-6 py-3 text-sm font-semibold text-white disabled:opacity-50 dark:bg-white dark:text-neutral-900"
+              >
+                {adding ? "Adding…" : "Add to cart"}
+              </button>
+              {cartMessage && (
+                <p role="alert" className="mt-3 text-sm text-red-600">
+                  {cartMessage}
+                </p>
+              )}
               <Link
                 href={`/?similar=${encodeURIComponent(product.handle)}`}
                 className="mt-8 inline-block rounded-xl bg-neutral-900 px-6 py-3 text-sm font-semibold text-white dark:bg-white dark:text-neutral-900"

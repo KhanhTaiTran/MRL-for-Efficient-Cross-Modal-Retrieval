@@ -42,6 +42,8 @@ const inputClass =
 export function AuthForm({ mode }: { mode: AuthMode }) {
   const router = useRouter();
   const params = useSearchParams();
+  const returnPath = params.get("next");
+  const nextQuery = returnPath ? `next=${encodeURIComponent(returnPath)}` : "";
   const { setSession } = useAuth();
   const [email, setEmail] = useState(params.get("email") ?? "");
   const [busy, setBusy] = useState(false);
@@ -64,7 +66,9 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
         { method: "POST", body: JSON.stringify(Object.fromEntries(fields)) },
       );
       if (mode === "register") {
-        router.push(`/verify-email?email=${encodeURIComponent(email)}`);
+        router.push(
+          `/verify-email?email=${encodeURIComponent(email)}${nextQuery ? `&${nextQuery}` : ""}`,
+        );
       } else if (mode === "login" || mode === "verify-email") {
         setSession(data);
         const next = params.get("next");
@@ -219,7 +223,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
                 New here?{" "}
                 <Link
                   className="text-neutral-900 underline underline-offset-4 dark:text-white"
-                  href="/register"
+                  href={`/register${nextQuery ? `?${nextQuery}` : ""}`}
                 >
                   Create an account
                 </Link>
@@ -227,7 +231,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
               <p>
                 <Link
                   className="underline underline-offset-4"
-                  href={`/verify-email?email=${encodeURIComponent(email)}`}
+                  href={`/verify-email?email=${encodeURIComponent(email)}${nextQuery ? `&${nextQuery}` : ""}`}
                 >
                   Verify your email
                 </Link>
@@ -237,7 +241,10 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
           {mode === "register" && (
             <p>
               Already have an account?{" "}
-              <Link href="/login" className="underline underline-offset-4">
+              <Link
+                href={`/login${nextQuery ? `?${nextQuery}` : ""}`}
+                className="underline underline-offset-4"
+              >
                 Sign in
               </Link>
             </p>
@@ -254,7 +261,10 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
           )}
           {mode !== "login" && mode !== "register" && (
             <p>
-              <Link href="/login" className="underline underline-offset-4">
+              <Link
+                href={`/login${nextQuery ? `?${nextQuery}` : ""}`}
+                className="underline underline-offset-4"
+              >
                 Back to sign in
               </Link>
             </p>

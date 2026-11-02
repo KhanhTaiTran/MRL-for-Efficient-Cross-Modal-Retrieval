@@ -9,6 +9,8 @@ import { HeroBanner } from "./home-content";
 import { CatalogBrowser } from "components/catalog/catalog-browser";
 import { getProduct, productForCard } from "lib/api/catalog";
 import { useRouter } from "next/navigation";
+import { useAuth } from "components/auth/auth-provider";
+import { getCart } from "lib/api/commerce";
 import { MobileBottomNav, type MobileNavTab } from "./mobile-bottom-nav";
 import { ProductCard } from "./product-card";
 import { ProductSkeleton } from "./product-skeleton";
@@ -46,7 +48,30 @@ export function AuraFindApp() {
   const [results, setResults] = useState<EnrichedProduct[]>([]);
   const retrievalMode = "adaptive" as const;
   const [error, setError] = useState<string | null>(null);
-  const cartCount = 0;
+  const { user } = useAuth();
+  const [cartBadge, setCartBadge] = useState({ owner: "", count: 0 });
+  const cartCount = cartBadge.owner === user?.id ? cartBadge.count : 0;
+  useEffect(() => {
+    if (!user) return;
+    let alive = true;
+    const update = () => {
+      getCart()
+        .then(({ data }) => {
+          if (alive)
+            setCartBadge({
+              owner: user.id,
+              count: data.items.reduce((sum, item) => sum + item.quantity, 0),
+            });
+        })
+        .catch(() => {});
+    };
+    update();
+    window.addEventListener("focus", update);
+    return () => {
+      alive = false;
+      window.removeEventListener("focus", update);
+    };
+  }, [user?.id]);
   const router = useRouter();
   const initialSimilar = useRef(false);
   const [searchFocused, setSearchFocused] = useState(false);
@@ -225,7 +250,7 @@ export function AuraFindApp() {
         onLogoClick={resetHome}
         onCartClick={() => {
           setMobileNavTab("cart");
-          toast.message("Your shopping bag will be available soon.");
+          router.push("/cart");
         }}
         onProfileClick={() => {
           setMobileNavTab("profile");
@@ -322,7 +347,7 @@ export function AuraFindApp() {
         onSearch={scrollToMobileSearch}
         onCart={() => {
           setMobileNavTab("cart");
-          toast.message("Your shopping bag will be available soon.");
+          router.push("/cart");
         }}
         onProfile={() => {
           setMobileNavTab("profile");
