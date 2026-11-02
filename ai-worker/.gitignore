@@ -1,6 +1,6 @@
-data/
+/data/
 
-checkpoints/
-embeddings/
-venv/ 
+/checkpoints/
+/embeddings/
+/venv/
 __pycache__

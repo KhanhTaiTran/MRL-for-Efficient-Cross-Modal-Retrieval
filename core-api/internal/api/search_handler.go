@@ -8,12 +8,35 @@ import (
 	"time"
 
 	"core-api/internal/broker"
+	"core-api/internal/catalog"
 	"core-api/internal/models"
 	"github.com/gin-gonic/gin"
 )
 
 type SearchHandler struct {
 	inferClient *broker.InferClient
+	catalog     *catalog.Repository
+}
+
+func (h *SearchHandler) WithCatalog(repo *catalog.Repository) *SearchHandler {
+	h.catalog = repo
+	return h
+}
+
+func (h *SearchHandler) respond(c *gin.Context, infer *broker.InferResponse, dim int, elapsed time.Duration, started time.Time) {
+	response := buildSearchResponse(infer, dim, elapsed, started)
+	if h.catalog != nil {
+		enrichStart := time.Now()
+		items, err := h.catalog.Enrich(c.Request.Context(), infer.IndexVersion, response.Data)
+		if err != nil {
+			c.JSON(503, gin.H{"error": "Search catalog is not ready for this index version"})
+			return
+		}
+		response.Data = items
+		response.Timing.EnrichMs = roundMs(time.Since(enrichStart).Seconds() * 1000)
+		response.Timing.RequestTotalMs = roundMs(time.Since(started).Seconds() * 1000)
+	}
+	c.JSON(http.StatusOK, response)
 }
 
 func NewSearchHandler(inferClient *broker.InferClient) *SearchHandler {
@@ -51,11 +74,12 @@ func (h *SearchHandler) SearchByText(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, buildSearchResponse(inferResp, cfg.MRLDimension, inferElapsed, requestStart))
+	h.respond(c, inferResp, cfg.MRLDimension, inferElapsed, requestStart)
 }
 
 func (h *SearchHandler) SearchByImage(c *gin.Context) {
 	requestStart := time.Now()
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 10*1024*1024)
 
 	file, header, err := c.Request.FormFile("image")
 	if err != nil {
@@ -85,7 +109,7 @@ func (h *SearchHandler) SearchByImage(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, buildSearchResponse(inferResp, cfg.MRLDimension, inferElapsed, requestStart))
+	h.respond(c, inferResp, cfg.MRLDimension, inferElapsed, requestStart)
 }
 
 func (h *SearchHandler) GetConfig(c *gin.Context) {
@@ -138,7 +162,7 @@ func buildSearchResponse(
 			CatalogProductID: item.CatalogProductID,
 			SimilarityScore:  item.SimilarityScore,
 			Caption:          item.Caption,
-			// For backward compatibility until Phase 2 database mapping is wired:
+			// Keep the indexed filename for the native FashionGen image route.
 			ProductID: item.ProductID,
 		}
 	}

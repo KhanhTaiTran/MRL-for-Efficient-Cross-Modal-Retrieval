@@ -1,18 +1,38 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"core-api/internal/api"
+	"core-api/internal/auth"
 	"core-api/internal/broker"
+	"core-api/internal/catalog"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
+	var db *pgxpool.Pool
+	if databaseURL := os.Getenv("DATABASE_URL"); databaseURL != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		var err error
+		db, err = pgxpool.New(ctx, databaseURL)
+		if err == nil {
+			err = db.Ping(ctx)
+		}
+		cancel()
+		if err != nil {
+			log.Fatal("Database unavailable: ", err)
+		}
+		defer db.Close()
+	}
+
 	inferAPIURL := os.Getenv("INFER_API_URL")
 	if inferAPIURL == "" {
 		inferAPIURL = "http://localhost:8001"
@@ -40,9 +60,14 @@ func main() {
 	inferClient := broker.NewInferClient(inferAPIURL, inferTimeout)
 
 	// Router and CORS Configuration
+	origins := strings.Split(os.Getenv("CORS_ORIGINS"), ",")
+	if len(origins) == 1 && origins[0] == "" {
+		origins = []string{"http://localhost:3000", "http://127.0.0.1:3000"}
+	}
 	r := gin.Default()
+	r.SetTrustedProxies(nil)
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000"},
+		AllowOrigins:     origins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},
@@ -67,9 +92,53 @@ func main() {
 		})
 	})
 
+	r.GET("/health/live", func(c *gin.Context) { c.JSON(200, gin.H{"status": "ok"}) })
+	r.GET("/health/ready", func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
+		defer cancel()
+		if db != nil {
+			if err := db.Ping(ctx); err != nil {
+				c.JSON(503, gin.H{"status": "not_ready", "dependency": "database"})
+				return
+			}
+		}
+		health, err := inferClient.Health(ctx)
+		if err != nil || health["model_loaded"] != true || health["index_loaded"] != true {
+			c.JSON(503, gin.H{"status": "not_ready", "dependency": "inference"})
+			return
+		}
+		c.JSON(200, gin.H{"status": "ok", "database_configured": db != nil})
+	})
+
 	// Register API Routes
 	apiGroup := r.Group("/api")
 	searchHandler := api.NewSearchHandler(inferClient)
+	if db != nil {
+		mediaBase := os.Getenv("PUBLIC_MEDIA_BASE_URL")
+		if mediaBase == "" {
+			mediaBase = "http://localhost:9000/products"
+		}
+		repo := &catalog.Repository{DB: db, MediaBase: mediaBase}
+		api.NewProductHandler(repo).RegisterRoutes(apiGroup)
+		searchHandler.WithCatalog(repo)
+		value := func(key, fallback string) string {
+			if v := os.Getenv(key); v != "" {
+				return v
+			}
+			return fallback
+		}
+		authHandler, err := api.NewAuthHandler(db, os.Getenv("JWT_SECRET"), os.Getenv("COOKIE_SECURE") == "true", origins, auth.Mailer{
+			Host: value("SMTP_HOST", "localhost"), Port: value("SMTP_PORT", "1025"), From: value("SMTP_FROM", "AuraFind <noreply@aurafind.local>"), Username: os.Getenv("SMTP_USERNAME"), Password: os.Getenv("SMTP_PASSWORD"),
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+		authHandler.RegisterRoutes(apiGroup)
+	} else {
+		apiGroup.Any("/products", func(c *gin.Context) { c.JSON(503, gin.H{"error": "Catalog requires DATABASE_URL"}) })
+		apiGroup.Any("/products/*path", func(c *gin.Context) { c.JSON(503, gin.H{"error": "Catalog requires DATABASE_URL"}) })
+		apiGroup.Any("/auth/*path", func(c *gin.Context) { c.JSON(503, gin.H{"error": "Accounts require DATABASE_URL"}) })
+	}
 	searchHandler.RegisterRoutes(apiGroup)
 
 	log.Printf("[*] Core API server running on :%s (Infer API: %s)", port, inferAPIURL)

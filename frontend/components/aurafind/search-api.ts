@@ -78,22 +78,26 @@ export async function fetchSearchConfig(): Promise<{
 
 export async function fetchProductImageAsFile(
   productId: string,
+  imageUrl?: string,
+  filename = productId,
 ): Promise<File> {
-  const response = await fetch(`${API_BASE_URL}/images/${productId}`);
+  const response = await fetch(
+    imageUrl || `${API_BASE_URL}/images/${productId}`,
+  );
 
   if (!response.ok) {
     throw new Error("Could not load product image for similar search.");
   }
 
   const blob = await response.blob();
-  return new File([blob], productId, {
+  return new File([blob], filename, {
     type: blob.type || "image/jpeg",
   });
 }
 
 export function getSearchErrorMessage(err: unknown): string {
   if (err instanceof TypeError) {
-    return "Cannot reach the search backend. Is it running on localhost:8080?";
+    return "Search is unavailable right now. Please try again.";
   }
   if (err instanceof Error) {
     return err.message;

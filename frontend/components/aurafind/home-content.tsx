@@ -1,8 +1,6 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { PRODUCT_GRID_CLASS } from "./constants";
-import { TRENDING_PRODUCTS } from "./mock-data";
 
 export function HeroBanner() {
   return (
@@ -48,63 +46,6 @@ export function HeroBanner() {
             </motion.p>
           </div>
         </motion.div>
-      </div>
-    </section>
-  );
-}
-
-export function TrendingGrid() {
-  return (
-    <section className="mx-auto max-w-[1600px] px-4 py-14 sm:px-6 lg:px-8">
-      <div className="mb-8 flex items-end justify-between">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-neutral-500">
-            Curated for you
-          </p>
-          <h3 className="mt-1 text-2xl font-semibold tracking-tight text-neutral-900 dark:text-white">
-            Trending Products
-          </h3>
-        </div>
-      </div>
-
-      <div className={PRODUCT_GRID_CLASS}>
-        {TRENDING_PRODUCTS.map((item, index) => (
-          <motion.article
-            key={item.id}
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true, margin: "-40px" }}
-            transition={{
-              duration: 0.5,
-              delay: index * 0.05,
-              ease: [0.22, 1, 0.36, 1],
-            }}
-            className="group"
-          >
-            <div className="overflow-hidden rounded-2xl bg-neutral-100 dark:bg-neutral-900">
-              <div className="relative aspect-[3/4] overflow-hidden">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={item.image}
-                  alt={item.name}
-                  loading="lazy"
-                  className="h-full w-full object-cover transition-transform duration-500 lg:group-hover:scale-105"
-                />
-                <span className="absolute left-3 top-3 rounded-full bg-white/90 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-neutral-700 backdrop-blur-sm">
-                  {item.category}
-                </span>
-              </div>
-            </div>
-            <div className="mt-3">
-              <h4 className="text-sm font-medium text-neutral-900 dark:text-white">
-                {item.name}
-              </h4>
-              <p className="mt-0.5 text-sm tabular-nums text-neutral-500">
-                {item.price}
-              </p>
-            </div>
-          </motion.article>
-        ))}
       </div>
     </section>
   );

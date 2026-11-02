@@ -5,7 +5,10 @@ import { AlertCircle } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AuraFindHeader } from "./header";
-import { HeroBanner, TrendingGrid } from "./home-content";
+import { HeroBanner } from "./home-content";
+import { CatalogBrowser } from "components/catalog/catalog-browser";
+import { getProduct, productForCard } from "lib/api/catalog";
+import { useRouter } from "next/navigation";
 import { MobileBottomNav, type MobileNavTab } from "./mobile-bottom-nav";
 import { ProductCard } from "./product-card";
 import { ProductSkeleton } from "./product-skeleton";
@@ -21,7 +24,6 @@ import {
   DEFAULT_MRL_DIMENSION,
   enrichProduct,
   type EnrichedProduct,
-  type SearchResultItem,
 } from "./types";
 
 import { PRODUCT_GRID_CLASS } from "./constants";
@@ -44,7 +46,9 @@ export function AuraFindApp() {
   const [results, setResults] = useState<EnrichedProduct[]>([]);
   const retrievalMode = "adaptive" as const;
   const [error, setError] = useState<string | null>(null);
-  const [cartCount, setCartCount] = useState(0);
+  const cartCount = 0;
+  const router = useRouter();
+  const initialSimilar = useRef(false);
   const [searchFocused, setSearchFocused] = useState(false);
   const [mobileNavTab, setMobileNavTab] = useState<MobileNavTab>("home");
 
@@ -144,7 +148,11 @@ export function AuraFindApp() {
     setMobileNavTab("search");
 
     try {
-      const file = await fetchProductImageAsFile(product.product_id);
+      const file = await fetchProductImageAsFile(
+        product.product_id,
+        product.image_url,
+        product.displayName,
+      );
       applyImageFile(file);
       const payload = await searchByImage(file, mrlDimension, retrievalMode);
 
@@ -183,10 +191,15 @@ export function AuraFindApp() {
     }
   };
 
-  const handleAddToCart = (_product: SearchResultItem) => {
-    setCartCount((count) => count + 1);
-    toast.success("Added to cart");
-  };
+  useEffect(() => {
+    if (!searchReady || initialSimilar.current) return;
+    const handle = new URLSearchParams(window.location.search).get("similar");
+    if (!handle) return;
+    initialSimilar.current = true;
+    getProduct(handle)
+      .then(({ data }) => handleFindSimilar(productForCard(data)))
+      .catch((error) => toast.error(getSearchErrorMessage(error)));
+  }, [searchReady]);
 
   const searchPanelProps = {
     query,
@@ -212,13 +225,11 @@ export function AuraFindApp() {
         onLogoClick={resetHome}
         onCartClick={() => {
           setMobileNavTab("cart");
-          toast.message(
-            `${cartCount} item${cartCount === 1 ? "" : "s"} in cart`,
-          );
+          toast.message("Your shopping bag will be available soon.");
         }}
         onProfileClick={() => {
           setMobileNavTab("profile");
-          toast.message("Profile coming soon");
+          router.push("/account");
         }}
       />
 
@@ -243,7 +254,7 @@ export function AuraFindApp() {
             transition={{ duration: 0.35 }}
           >
             <HeroBanner />
-            <TrendingGrid />
+            <CatalogBrowser preview onFindSimilar={handleFindSimilar} />
           </motion.div>
         ) : (
           <motion.div
@@ -287,7 +298,6 @@ export function AuraFindApp() {
                       product={product}
                       index={index}
                       onFindSimilar={handleFindSimilar}
-                      onAddToCart={() => handleAddToCart(product)}
                       isScanning={scanningProductId === product.product_id}
                     />
                   ))}
@@ -312,13 +322,11 @@ export function AuraFindApp() {
         onSearch={scrollToMobileSearch}
         onCart={() => {
           setMobileNavTab("cart");
-          toast.message(
-            `${cartCount} item${cartCount === 1 ? "" : "s"} in cart`,
-          );
+          toast.message("Your shopping bag will be available soon.");
         }}
         onProfile={() => {
           setMobileNavTab("profile");
-          toast.message("Profile coming soon");
+          router.push("/account");
         }}
       />
     </div>

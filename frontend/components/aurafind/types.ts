@@ -3,6 +3,9 @@ export type SearchMode = "text" | "image";
 export interface SearchResultItem {
   vector_id?: number;
   product_id: string;
+  catalog_product_id?: string;
+  handle?: string;
+  image_url?: string;
   caption: string;
   name?: string;
   brand?: string;
@@ -40,14 +43,6 @@ export interface SearchResponse {
   data: SearchResultItem[];
   search_config?: SearchConfig;
   timing?: SearchTiming;
-}
-
-export interface TrendingProduct {
-  id: string;
-  name: string;
-  price: string;
-  image: string;
-  category: string;
 }
 
 export interface EnrichedProduct extends SearchResultItem {

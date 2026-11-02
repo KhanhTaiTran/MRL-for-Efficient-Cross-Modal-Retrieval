@@ -1,74 +1,196 @@
-networks:
-  mrl-network:
-    driver: bridge
-
+name: ${COMPOSE_PROJECT_NAME:-aurafind}
+x-ai: &ai
+  image: aurafind-ai:phase0
+  build:
+    context: .
+    dockerfile: ai-worker/Dockerfile
+  environment: &ai-env
+    VECTOR_DB_DIR: /data/vector_db
+    HF_HOME: /data/huggingface
+    OMP_NUM_THREADS: "1"
+    MKL_NUM_THREADS: "1"
+    INFERENCE_CONCURRENCY: "2"
+  volumes: &ai-volumes
+    - vector_data:/data/vector_db
+    - model_cache:/data/huggingface
+    - demo_images:/data/images
 services:
-  # ─────────────────────────────────────────
-  # RabbitMQ — message broker
-  # ─────────────────────────────────────────
-  rabbitmq:
-    image: rabbitmq:3-management
-    container_name: rabbitmq
-    restart: unless-stopped
-    ports:
-      - "5672:5672" # AMQP protocol
-      - "15672:15672" # Management UI  →  http://localhost:15672
+  postgres:
+    image: postgres:16-alpine
     environment:
-      RABBITMQ_DEFAULT_USER: guest
-      RABBITMQ_DEFAULT_PASS: guest
+      POSTGRES_DB: aurafind
+      POSTGRES_USER: aurafind
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aurafind_dev}
+    ports: ["127.0.0.1:${POSTGRES_PORT:-5432}:5432"]
+    volumes: [postgres_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aurafind -d aurafind"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  migrate:
+    image: migrate/migrate:v4.18.3
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aurafind_dev}
+    command:
+      [
+        "-path",
+        "/migrations",
+        "-database",
+        "postgres://aurafind:${POSTGRES_PASSWORD:-aurafind_dev}@postgres:5432/aurafind?sslmode=disable",
+        "up",
+      ]
+    volumes: ["./infra/migrations:/migrations:ro"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+  minio:
+    image: aurafind-minio:phase0
+    build: { context: ./infra/minio }
+    command: server /data --console-address ':9001'
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-aurafind_dev}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-aurafind_dev_secret}
+    ports:
+      [
+        "127.0.0.1:${MINIO_PORT:-9000}:9000",
+        "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001",
+      ]
+    volumes: [minio_data:/data]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    ports:
+      [
+        "127.0.0.1:${MAILHOG_SMTP_PORT:-1025}:1025",
+        "127.0.0.1:${MAILHOG_UI_PORT:-8025}:8025",
+      ]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8025/"]
+      interval: 10s
+      retries: 10
+  seed:
+    <<: *ai
+    command: ["python", "/app/infra/scripts/seed_demo.py"]
+    environment:
+      <<: *ai-env
+      DATABASE_URL: postgres://aurafind:${POSTGRES_PASSWORD:-aurafind_dev}@postgres:5432/aurafind
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-aurafind_dev}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-aurafind_dev_secret}
+      DEMO_MODEL_NAME: ${DEMO_MODEL_NAME:-openai/clip-vit-base-patch32}
+      DEMO_ADMIN_EMAIL: ${DEMO_ADMIN_EMAIL:-admin@aurafind.local}
+      DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:-aurafind}
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      minio: { condition: service_healthy }
+    restart: "no"
+  ai-worker:
+    <<: *ai
+    environment:
+      <<: *ai-env
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+    depends_on:
+      seed: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 90s
+  core-api:
+    build: { context: ./core-api, dockerfile: Dockerfile }
+    environment:
+      DATABASE_URL: postgres://aurafind:${POSTGRES_PASSWORD:-aurafind_dev}@postgres:5432/aurafind
+      INFER_API_URL: http://ai-worker:8001
+      INFER_TIMEOUT: 15s
+      IMG_BASE_DIR: /data/images
+      CORS_ORIGINS: http://localhost:${FRONTEND_PORT:-3000},http://127.0.0.1:${FRONTEND_PORT:-3000}
+      PUBLIC_MEDIA_BASE_URL: ${PUBLIC_MEDIA_BASE_URL:-http://localhost:9000/products}
+      SMTP_HOST: mailhog
+      SMTP_PORT: "1025"
+      SMTP_FROM: ${SMTP_FROM:-noreply@aurafind.local}
+      JWT_SECRET: ${JWT_SECRET:-local-development-key-change-before-deployment-aurafind}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    volumes: [demo_images:/data/images:ro]
+    ports: ["127.0.0.1:${API_PORT:-8080}:8080"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      ai-worker: { condition: service_healthy }
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "-q",
+          "-O",
+          "/dev/null",
+          "http://localhost:8080/health/ready",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  frontend:
+    environment:
+      API_INTERNAL_URL: http://core-api:8080
+      SITE_URL: ${SITE_URL:-http://localhost:${FRONTEND_PORT:-3000}}
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
+        SITE_URL: ${SITE_URL:-http://localhost:${FRONTEND_PORT:-3000}}
+    ports: ["127.0.0.1:${FRONTEND_PORT:-3000}:3000"]
+    depends_on:
+      core-api: { condition: service_healthy }
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+  verify:
+    <<: *ai
+    volumes: [./infra:/app/infra:ro]
+    profiles: [tools]
+    command: ["python", "/app/infra/scripts/verify_phase0.py"]
+    environment:
+      DATABASE_URL: postgres://aurafind:${POSTGRES_PASSWORD:-aurafind_dev}@postgres:5432/aurafind
+      API_URL: http://core-api:8080
+      FRONTEND_URL: http://frontend:3000
+      STORAGE_URL: http://minio:9000
+      STORAGE_CONSOLE_URL: http://minio:9001
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-aurafind_dev}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-aurafind_dev_secret}
+      MAILHOG_URL: http://mailhog:8025
+      SMTP_HOST: mailhog
+      SMTP_PORT: "1025"
+      WEB_ORIGIN: http://localhost:${FRONTEND_PORT:-3000}
+    restart: "no"
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    profiles: [jobs]
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-aurafind_dev}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-aurafind_dev_secret}
+    ports: ["127.0.0.1:5672:5672", "127.0.0.1:15672:15672"]
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "ping"]
       interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - mrl-network
-
-  # ─────────────────────────────────────────
-  # Core API — Golang / Gin REST gateway
-  # ─────────────────────────────────────────
-  core-api:
-    build:
-      context: ./core-api
-      dockerfile: Dockerfile
-    container_name: core-api
-    restart: unless-stopped
-    ports:
-      - "8080:8080"
-    environment:
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
-      INFER_API_URL: http://ai-worker:8001
-      RABBITMQ_QUEUE: image_search_queue
-      IMG_BASE_DIR: /data/images
-      PORT: 8080
-    volumes:
-      # Mount dataset images (read-only) for static /images route
-      - "D:\\Pre-thesis\\Thesis Dataset-20260617T002927Z-3-002\\Thesis Dataset\\data_images:/data/images:ro"
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-    networks:
-      - mrl-network
-
-  # ─────────────────────────────────────────
-  # AI Worker — Python / Pika consumer
-  # ─────────────────────────────────────────
-  ai-worker:
-    build:
-      context: ./ai-worker
-      dockerfile: Dockerfile
-    container_name: ai-worker
-    restart: unless-stopped
-    environment:
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
-      RABBITMQ_HOST: rabbitmq
-      RABBITMQ_QUEUE: image_search_queue
-      IMG_BASE_DIR: /data/images
-    volumes:
-      # Mount dataset images (read-only)
-      - "D:\\Pre-thesis\\Thesis Dataset-20260617T002927Z-3-002\\Thesis Dataset\\data_images:/data/images:ro"
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-    networks:
-      - mrl-network
+      retries: 10
+volumes:
+  postgres_data:
+  minio_data:
+  vector_data:
+  model_cache:
+  demo_images:

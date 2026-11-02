@@ -7,8 +7,12 @@ uvicorn[standard]
 python-multipart
 faiss-cpu
 numpy
-transformers
+transformers>=4.45,<5
 tqdm
 h5py
 
 pandas
+
+psycopg[binary]>=3.2,<4
+minio>=7.2,<8
+bcrypt>=4,<6

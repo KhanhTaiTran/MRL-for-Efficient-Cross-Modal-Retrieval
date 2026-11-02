@@ -1,7 +1,8 @@
 export default {
+  output: "standalone",
   allowedDevOrigins: ["local-origin.dev", "*.local-origin.dev"],
   experimental: {
-    ppr: true,
+    ppr: "incremental" as const,
     inlineCss: true,
     useCache: true,
   },

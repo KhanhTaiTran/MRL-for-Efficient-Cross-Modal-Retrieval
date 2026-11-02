@@ -1,7 +1,8 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Plus, Sparkles, Star } from "lucide-react";
+import { ArrowUpRight, Sparkles, Star } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getImageUrl, type EnrichedProduct } from "./types";
 
@@ -9,7 +10,6 @@ interface ProductCardProps {
   product: EnrichedProduct;
   index: number;
   onFindSimilar: (product: EnrichedProduct) => void;
-  onAddToCart: () => void;
   isScanning?: boolean;
 }
 
@@ -31,7 +31,6 @@ export function ProductCard({
   product,
   index,
   onFindSimilar,
-  onAddToCart,
   isScanning = false,
 }: ProductCardProps) {
   const [isHovered, setIsHovered] = useState(false);
@@ -58,7 +57,7 @@ export function ProductCard({
         <div className="relative aspect-[3/4] overflow-hidden">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <motion.img
-            src={getImageUrl(product.product_id)}
+            src={product.image_url || getImageUrl(product.product_id)}
             alt={product.displayName}
             crossOrigin="anonymous"
             loading="lazy"
@@ -97,21 +96,22 @@ export function ProductCard({
             <span className="sm:hidden">Similar</span>
           </button>
 
-          <motion.div
-            initial={false}
-            animate={{ y: showQuickAdd ? 0 : "100%" }}
-            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute inset-x-0 bottom-0 p-2 sm:p-3"
-          >
-            <button
-              type="button"
-              onClick={onAddToCart}
-              className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-neutral-900 py-2 text-[10px] font-semibold uppercase tracking-wider text-white transition-colors active:bg-neutral-700 sm:gap-2 sm:py-2.5 sm:text-xs lg:hover:bg-neutral-800 dark:bg-white dark:text-neutral-900 dark:active:bg-neutral-200 lg:dark:hover:bg-neutral-100"
+          {product.handle && (
+            <motion.div
+              initial={false}
+              animate={{ y: showQuickAdd ? 0 : "100%" }}
+              transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+              className="absolute inset-x-0 bottom-0 p-2 sm:p-3"
             >
-              <Plus className="h-3.5 w-3.5" />
-              Quick Add
-            </button>
-          </motion.div>
+              <Link
+                href={`/product/${product.handle}`}
+                className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-neutral-900 py-2 text-[10px] font-semibold uppercase tracking-wider text-white transition-colors active:bg-neutral-700 sm:gap-2 sm:py-2.5 sm:text-xs lg:hover:bg-neutral-800 dark:bg-white dark:text-neutral-900 dark:active:bg-neutral-200 lg:dark:hover:bg-neutral-100"
+              >
+                <ArrowUpRight className="h-3.5 w-3.5" />
+                View product
+              </Link>
+            </motion.div>
+          )}
         </div>
       </div>
 
@@ -125,7 +125,16 @@ export function ProductCard({
           title={product.displayName}
           className="line-clamp-2 min-h-10 text-sm font-medium leading-5 text-neutral-900 dark:text-white"
         >
-          {product.displayName}
+          {product.handle ? (
+            <Link
+              href={`/product/${product.handle}`}
+              className="hover:underline"
+            >
+              {product.displayName}
+            </Link>
+          ) : (
+            product.displayName
+          )}
         </h3>
         {product.ratingAverage !== null ? (
           <div

@@ -1,0 +1,9 @@
+checkpoints
+embeddings
+vector_db*
+data
+__pycache__
+*.pyc
+**/__pycache__
+**/*.pyc
+.env*

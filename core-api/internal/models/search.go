@@ -11,17 +11,21 @@ type SearchAPIResponse struct {
 }
 
 // EnrichedResult represents an item in the search results.
-// In Phase 2, this will be enriched with product metadata from PostgreSQL.
+// Catalog fields are enriched using the version returned by inference.
 type EnrichedResult struct {
-	CatalogProductID string  `json:"catalog_product_id,omitempty"`
-	VectorID         int     `json:"vector_id"`
-	SimilarityScore  float64 `json:"similarity_score"`
-	Caption          string  `json:"caption"`
-	ProductID        string  `json:"product_id,omitempty"`
-	Handle           string  `json:"handle,omitempty"`
-	Name             string  `json:"name,omitempty"`
-	Price            float64 `json:"price,omitempty"`
-	ImageURL         string  `json:"image_url,omitempty"`
+	CatalogProductID string   `json:"catalog_product_id,omitempty"`
+	VectorID         int      `json:"vector_id"`
+	SimilarityScore  float64  `json:"similarity_score"`
+	Caption          string   `json:"caption"`
+	ProductID        string   `json:"product_id,omitempty"`
+	Handle           string   `json:"handle,omitempty"`
+	Name             string   `json:"name,omitempty"`
+	Price            *float64 `json:"price,omitempty"`
+	Brand            string   `json:"brand,omitempty"`
+	Currency         string   `json:"currency,omitempty"`
+	RatingAverage    *float64 `json:"rating_average"`
+	ReviewCount      int      `json:"review_count"`
+	ImageURL         string   `json:"image_url,omitempty"`
 }
 
 // SearchConfigResp describes the actual search execution parameters.
