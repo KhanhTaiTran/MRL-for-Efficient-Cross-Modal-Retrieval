@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { AuraFindHeader } from "./header";
 import { HeroBanner } from "./home-content";
 import { CatalogBrowser } from "components/catalog/catalog-browser";
+import { CatalogSourceNote } from "components/catalog/catalog-source-note";
 import { getProduct, productForCard } from "lib/api/catalog";
 import { useRouter } from "next/navigation";
 import { useAuth } from "components/auth/auth-provider";
@@ -268,6 +269,7 @@ export function AuraFindApp() {
         </p>
         <SearchPanel {...searchPanelProps} />
       </div>
+      <CatalogSourceNote />
 
       <AnimatePresence mode="wait">
         {!hasSearched && !isLoading ? (

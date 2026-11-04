@@ -558,6 +558,9 @@ async def get_config():
         "dataset_split": state["meta"].get("dataset_split"),
         "num_vectors": state["meta"].get("num_vectors"),
         "num_products": state["meta"].get("num_products"),
+        "catalog_source": state["meta"].get("catalog_source"),
+        "model_kind": state["meta"].get("model_kind"),
+        "commerce_data_note": state["meta"].get("commerce_data_note"),
     }
 
 

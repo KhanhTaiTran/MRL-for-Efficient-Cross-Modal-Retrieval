@@ -146,6 +146,12 @@ export function AdminPanel() {
         <h1 className="text-3xl font-semibold tracking-tight">
           Catalog administration
         </h1>
+        <Link
+          href="/admin/reviews"
+          className="mt-4 inline-block text-sm underline"
+        >
+          Moderate customer reviews
+        </Link>
         {loading ? (
           <p className="mt-8">Loading account…</p>
         ) : !user ? (

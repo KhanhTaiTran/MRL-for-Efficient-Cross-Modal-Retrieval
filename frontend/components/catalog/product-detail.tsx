@@ -7,6 +7,7 @@ import { StoreHeader } from "components/layout/store-header";
 import { useRouter } from "next/navigation";
 import { useAuth } from "components/auth/auth-provider";
 import { setCartItem } from "lib/api/commerce";
+import { ProductEngagement } from "./product-engagement";
 
 export function ProductDetail({ product }: { product: CatalogProduct }) {
   const router = useRouter();
@@ -66,6 +67,11 @@ export function ProductDetail({ product }: { product: CatalogProduct }) {
               <p className="mt-5 text-2xl font-semibold">
                 {formatPrice(variant?.price ?? product.price, product.currency)}
               </p>
+              {product.commerce_data_note && (
+                <p className="mt-3 text-xs leading-5 text-neutral-500">
+                  {product.commerce_data_note}
+                </p>
+              )}
               <p className="mt-4 text-sm text-neutral-500">
                 {product.review_count > 0 && product.rating_average !== null
                   ? `${product.rating_average.toFixed(1)} out of 5 · ${product.review_count} reviews`
@@ -150,6 +156,7 @@ export function ProductDetail({ product }: { product: CatalogProduct }) {
             </div>
           </div>
         }
+        <ProductEngagement id={product.id} handle={product.handle} />
       </div>
     </>
   );

@@ -9,8 +9,18 @@ The project combines a Next.js storefront, a Go gateway and a Python CLIP/FAISS 
 - [Phase 1 authentication and catalog](notes/phase1.md)
 - [Phase 2 cart, mock checkout and customer orders](notes/phase2.md)
 - [Phase 3 catalog administration and live index rebuilds](notes/phase3.md)
+- [Phase 4 verified-purchase reviews, moderation and wishlist](notes/phase4.md)
 
 The storefront uses English. MRL controls and timing are developer tools, not shopping UI.
+
+## Real FashionGen demonstration
+
+Use the existing local FashionGen corpus and trained MRL checkpoint with
+`.\infra\scripts\start_fashiongen.ps1 -Build` (subsequent starts omit `-Build`).
+This publishes 7,519 products / 32,528 original photographs to the SQL storefront
+and serves the verified MRL index at all six dimensions. Photos/descriptions are
+real dataset records; prices, inventory and payments remain explicitly simulated.
+See [deployment, verification and demo sequence](notes/fashiongen-demo.md).
 
 ## Portable demo (Phase 0)
 

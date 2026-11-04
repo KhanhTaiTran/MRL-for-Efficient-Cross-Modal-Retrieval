@@ -29,6 +29,7 @@ type Product struct {
 	RatingAverage    *float64  `json:"rating_average"`
 	Featured         bool      `json:"is_featured"`
 	SearchStatus     string    `json:"search_status"`
+	CommerceDataNote string    `json:"commerce_data_note,omitempty"`
 	DefaultVariantID string    `json:"default_variant_id"`
 	Images           []Image   `json:"images,omitempty"`
 	Variants         []Variant `json:"variants,omitempty"`
@@ -66,13 +67,13 @@ func (r *Repository) ImageURL(key string) string {
 	return strings.TrimRight(r.MediaBase, "/") + "/" + strings.Join(parts, "/")
 }
 
-const fields = `p.id::text,p.handle,p.name,COALESCE(p.description,''),COALESCE(p.brand,''),COALESCE(p.category,''),p.base_price::float8,p.currency,COALESCE(img.object_key,''),COALESCE(rv.count,0)::int,rv.average,p.is_featured,p.search_status,COALESCE(p.default_variant_id::text,'')`
+const fields = `p.id::text,p.handle,p.name,COALESCE(p.description,''),COALESCE(p.brand,''),COALESCE(p.category,''),p.base_price::float8,p.currency,COALESCE(img.object_key,''),COALESCE(rv.count,0)::int,rv.average,p.is_featured,p.search_status,COALESCE(p.default_variant_id::text,''),COALESCE(p.metadata->>'commerce_data_note','')`
 const joins = ` LEFT JOIN LATERAL (SELECT object_key FROM product_images WHERE product_id=p.id AND is_active ORDER BY is_primary DESC,position,id LIMIT 1) img ON true LEFT JOIN LATERAL (SELECT count(*) count,avg(rating)::float8 average FROM reviews WHERE product_id=p.id AND NOT is_hidden) rv ON true `
 
 func (r *Repository) scan(row pgx.Row) (Product, error) {
 	var p Product
 	var key string
-	err := row.Scan(&p.ID, &p.Handle, &p.Name, &p.Description, &p.Brand, &p.Category, &p.Price, &p.Currency, &key, &p.ReviewCount, &p.RatingAverage, &p.Featured, &p.SearchStatus, &p.DefaultVariantID)
+	err := row.Scan(&p.ID, &p.Handle, &p.Name, &p.Description, &p.Brand, &p.Category, &p.Price, &p.Currency, &key, &p.ReviewCount, &p.RatingAverage, &p.Featured, &p.SearchStatus, &p.DefaultVariantID, &p.CommerceDataNote)
 	p.ImageURL = r.ImageURL(key)
 	return p, err
 }

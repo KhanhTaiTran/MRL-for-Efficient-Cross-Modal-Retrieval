@@ -84,13 +84,16 @@ def rebuild(db, job):
     if digest(checkpoint) != source_meta['checkpoint_sha256']:
         raise RuntimeError('Source checkpoint hash mismatch')
     # One SQL statement captures products, image identity and revisions consistently.
+    limit = int(os.environ.get('MAX_CATALOG_IMAGES', '20000'))
+    if not 1 <= limit <= 100000:
+        raise RuntimeError('MAX_CATALOG_IMAGES must be between 1 and 100000')
     rows = db.execute("""SELECT p.id product_id,p.name,COALESCE(p.description,'') description,
         COALESCE(p.brand,'') brand,p.search_revision,i.id image_id,i.object_key
         FROM products p JOIN product_images i ON i.product_id=p.id AND i.is_active
-        WHERE p.is_active ORDER BY p.id,i.position,i.id LIMIT 20001"""
+        WHERE p.is_active ORDER BY p.id,i.position,i.id LIMIT %s""", (limit + 1,)
     ).fetchall()
-    if not rows or len(rows) > 20000:
-        raise RuntimeError('Rebuild requires 1–20,000 active catalog images')
+    if not rows or len(rows) > limit:
+        raise RuntimeError(f'Rebuild requires 1–{limit:,} active catalog images')
     for pid, revision in {row['product_id']: row['search_revision'] for row in rows}.items():
         db.execute("UPDATE products SET search_status='indexing' WHERE id=%s AND search_revision=%s", (pid, revision))
     version = str(uuid4())

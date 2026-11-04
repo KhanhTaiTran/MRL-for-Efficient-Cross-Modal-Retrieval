@@ -68,6 +68,11 @@ export async function fetchSearchConfig(): Promise<{
   supported_dims: number[];
   active_index_version: string;
   default_dim: number;
+  catalog_source?: string;
+  num_products?: number;
+  num_vectors?: number;
+  model_kind?: string;
+  commerce_data_note?: string;
 }> {
   const response = await fetch(`${API_BASE_URL}/api/search/config`);
   if (!response.ok) {

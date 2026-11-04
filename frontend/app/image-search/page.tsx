@@ -8,6 +8,8 @@ import {
   XMarkIcon,
 } from "@heroicons/react/24/outline";
 import Image from "next/image";
+import Link from "next/link";
+import { CatalogSourceNote } from "components/catalog/catalog-source-note";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -16,6 +18,9 @@ import { API_BASE_URL } from "components/aurafind/types";
 
 interface SearchResult {
   product_id: string;
+  image_url?: string;
+  name?: string;
+  handle?: string;
   distance?: number;
   similarity_score?: number;
   vector_id?: number;
@@ -244,6 +249,7 @@ export default function ImageSearchPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:py-14 lg:px-6">
+      <CatalogSourceNote />
       {/* Header */}
       <div className="mb-10 text-center">
         <p className="text-xs font-medium uppercase tracking-wider text-violet-600 dark:text-violet-400">
@@ -398,12 +404,17 @@ export default function ImageSearchPage() {
                         <div className="relative aspect-square overflow-hidden bg-neutral-100 dark:bg-neutral-800">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
-                            src={`/mock_data/${item.product_id}`}
-                            alt={formatProductName(item.product_id)}
+                            src={
+                              item.image_url ||
+                              `${API_BASE_URL}/images/${encodeURIComponent(item.product_id)}`
+                            }
+                            alt={
+                              item.name || formatProductName(item.product_id)
+                            }
                             className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                           />
                           <span className="absolute right-2 top-2 rounded-full bg-violet-600 px-2.5 py-1 text-xs font-semibold tabular-nums text-white shadow-sm">
-                            d=
+                            score=
                             {(
                               item.similarity_score ??
                               item.distance ??
@@ -413,10 +424,17 @@ export default function ImageSearchPage() {
                         </div>
                         <div className="p-4">
                           <h3 className="font-medium text-neutral-900 dark:text-white">
-                            {formatProductName(item.product_id)}
+                            {item.handle ? (
+                              <Link href={`/product/${item.handle}`}>
+                                {item.name ||
+                                  formatProductName(item.product_id)}
+                              </Link>
+                            ) : (
+                              item.name || formatProductName(item.product_id)
+                            )}
                           </h3>
                           <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-                            Similarity distance
+                            Similarity score
                           </p>
                         </div>
                       </article>
@@ -448,8 +466,8 @@ export default function ImageSearchPage() {
                   Dimension comparison
                 </h2>
                 <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-                  Lower distance means a closer match. Compare latency and match
-                  quality across supported dimensions.
+                  Higher cosine similarity means a closer match. Compare latency
+                  and match quality across supported dimensions.
                 </p>
               </div>
               <div className="overflow-x-auto">
@@ -460,7 +478,7 @@ export default function ImageSearchPage() {
                       <th className="px-5 py-3 font-medium">Request latency</th>
                       <th className="px-5 py-3 font-medium">FAISS latency</th>
                       <th className="px-5 py-3 font-medium">Top match</th>
-                      <th className="px-5 py-3 font-medium">Top distance</th>
+                      <th className="px-5 py-3 font-medium">Top similarity</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
@@ -484,7 +502,8 @@ export default function ImageSearchPage() {
                         </td>
                         <td className="px-5 py-4 text-neutral-600 dark:text-neutral-300">
                           {row.topResult
-                            ? formatProductName(row.topResult.product_id)
+                            ? row.topResult.name ||
+                              formatProductName(row.topResult.product_id)
                             : "No result"}
                         </td>
                         <td className="px-5 py-4 tabular-nums text-neutral-600 dark:text-neutral-300">

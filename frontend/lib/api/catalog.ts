@@ -17,6 +17,7 @@ export interface ProductVariant {
   is_available: boolean;
 }
 export interface CatalogProduct {
+  commerce_data_note?: string;
   id: string;
   handle: string;
   name: string;
