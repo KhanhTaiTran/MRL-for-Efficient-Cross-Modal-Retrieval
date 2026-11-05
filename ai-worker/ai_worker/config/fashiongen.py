@@ -6,7 +6,7 @@ if os.path.exists("/content/data/train"):
 elif os.path.exists("/content/drive/MyDrive/FashionGen/train"):
     FASHIONGEN_ROOT = "/content/drive/MyDrive/FashionGen" 
 else:
-    FASHIONGEN_ROOT = os.environ.get("FASHIONGEN_ROOT", r"D:\Pre-thesis\FashionGen\extracted")
+    FASHIONGEN_ROOT = os.environ.get("FASHIONGEN_ROOT", r"C:\Data_D_Backup\Pre-thesis\FashionGen\extracted")
 
 # Train paths (prefer local SSD if available)
 TRAIN_DIR = "/content/data/train" if os.path.exists("/content/data/train/images") else os.path.join(FASHIONGEN_ROOT, "train")
@@ -24,8 +24,8 @@ else:
 VAL_CSV = os.path.join(VAL_DIR, "metadata.csv")
 VAL_IMG_DIR = os.path.join(VAL_DIR, "images")
 
-CLIP_MODEL_NAME = "openai/clip-vit-base-patch16"    # CLIP ViT-B/16
-MAX_LENGTH = 77                                     # CLIP token limit
+CLIP_MODEL_NAME = "openai/clip-vit-base-patch32"
+MAX_LENGTH = 77 # CLIP token limit
 IMAGE_SIZE = 224                                    
 NESTING_LIST = [16, 32, 64, 128, 256, 512]          
 FULL_DIM = 512                                     

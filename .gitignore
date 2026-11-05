@@ -15,6 +15,7 @@
 /ai-worker/vector_db.building-*/
 /tmp/
 /docs/
+/notes/
 # Generated retrieval data, local secrets and compiled services
 /ai-worker/vector_db/
 /core-api/*.exe

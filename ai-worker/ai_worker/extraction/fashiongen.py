@@ -18,7 +18,7 @@ def load_model(checkpoint_path: str | None, device: str) -> MRL_CrossModal_Model
     else:
         if checkpoint_path:
             print(f"-> WARNING: checkpoint not found at '{checkpoint_path}'.")
-        print(f"-> Using zero-shot CLIP weights (openai/clip-vit-base-patch16).")
+        print(f"-> Using zero-shot CLIP weights (openai/clip-vit-base-patch32).")
 
     model.eval() 
     return model
