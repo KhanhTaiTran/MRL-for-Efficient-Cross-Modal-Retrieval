@@ -29,6 +29,7 @@ export interface AdminProduct {
   revision: number;
   default_variant_id: string;
   search_status: string;
+  updated_at?: string;
   variants?: AdminVariant[];
   images?: AdminImage[];
 }
@@ -38,6 +39,8 @@ export interface IndexJob {
   index_version_id: string | null;
   error: string | null;
   created_at: string;
+  started_at?: string | null;
+  finished_at?: string | null;
 }
 export interface IndexVersion {
   id: string;

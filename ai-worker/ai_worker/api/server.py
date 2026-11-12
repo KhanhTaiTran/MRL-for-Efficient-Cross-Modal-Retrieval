@@ -21,14 +21,16 @@ from transformers import AutoTokenizer
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, status
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from ai_worker.models.mrl import MRL_CrossModal_Model
 from ai_worker.retrieval.reranker import TwoStageReranker
-from ai_worker.retrieval.query_expansion import AlphaQueryExpander
+from ai_worker.retrieval.hybrid import HybridRetriever
+from ai_worker.indexing.search_documents import validate_search_documents
 from ai_worker.paths import worker_path
 
 # Environment & Constants
-DEFAULT_CKPT = "checkpoints/mrl_fashiongen_latest.pt"
+DEFAULT_CKPT = "checkpoints/mrl_fashiongen_best.pt"
 CHECKPOINT_PATH = str(worker_path(os.environ.get("CHECKPOINT_PATH", DEFAULT_CKPT)))
 VECTOR_DB_DIR = str(worker_path(os.environ.get("VECTOR_DB_DIR", "vector_db")))
 INDEX_ROOT = VECTOR_DB_DIR
@@ -40,10 +42,6 @@ USE_RERANKING = True
 RERANK_STAGE1_DIM = 64
 RERANK_POOL_SIZE = 50
 RERANK_MODE = "cosine"
-
-USE_AQE = True
-AQE_ALPHA = 0.7
-AQE_TOP_K = 5
 
 INFERENCE_CONCURRENCY = int(os.environ.get("INFERENCE_CONCURRENCY", "4"))
 semaphore: Optional[asyncio.Semaphore] = None
@@ -58,11 +56,12 @@ state: Dict[str, Any] = {
     "image_paths": [],
     "captions": [],
     "reranker": None,
-    "aqe_expander": None,
     "device": "cpu",
     "meta": {},
     "supported_dims": [16, 32, 64, 128, 256, 512],
     "active_version": "v1-default",
+    "product_retriever": None,
+    "search_documents": None,
 }
 
 
@@ -80,6 +79,48 @@ def _extract_raw_vectors(index: faiss.Index) -> np.ndarray:
         return faiss.rev_swig_ptr(index.get_xb(), n * dim).reshape(n, dim)
     except Exception:
         return np.vstack([index.reconstruct(i) for i in range(n)])
+
+
+def checkpoint_model_name(state_dict, fallback: str) -> str:
+    """Select the actual CLIP backbone before loading checkpoint tensors."""
+    weight = state_dict.get("clip.vision_model.embeddings.patch_embedding.weight")
+    if weight is None:
+        return fallback
+    patch = tuple(weight.shape[-2:])
+    if patch not in ((16, 16), (32, 32)):
+        raise RuntimeError(f"Unsupported CLIP checkpoint patch size: {patch}")
+    return f"openai/clip-vit-base-patch{patch[0]}"
+
+
+def _product_retriever(snapshot, payload=None):
+    """Build all retrieval state before publishing the engine reference."""
+    vectors = snapshot.get("db_vecs_512")
+    if vectors is None:
+        vectors = _extract_raw_vectors(snapshot["image_indexes"][512])
+    elif isinstance(vectors, torch.Tensor):
+        vectors = vectors.cpu().numpy()
+    if payload is not None:
+        documents = payload["documents"]
+    else:
+        # Legacy indexes still support product-level dense search without
+        # pretending that unverified captions are a lexical artifact.
+        grouped = {}
+        for vector_id, product_id in enumerate(snapshot.get("product_ids", snapshot["image_paths"])):
+            document = grouped.setdefault(str(product_id), {"product_id": str(product_id), "vector_ids": []})
+            document["vector_ids"].append(vector_id)
+        documents = list(grouped.values())
+    return HybridRetriever(
+        documents, vectors, snapshot["supported_dims"],
+        lexical_available=payload is not None,
+        brand_aliases=payload["brand_aliases"] if payload is not None else None,
+    )
+
+
+def default_text_retrieval_mode():
+    # Promoted after the independently judged relevance/latency gate. Explicit
+    # opt-out and legacy-index dense fallback remain available for rollback.
+    enabled = os.environ.get("HYBRID_SEARCH_ENABLED", "1").lower() in ("1", "true", "yes")
+    return "hybrid" if enabled and state.get("search_documents") is not None else "dense"
 
 
 def validate_model_index_consistency(meta: Dict[str, Any], checkpoint_path: str, actual_ntotal: int, current_model_name: str = ""):
@@ -139,7 +180,7 @@ def setup_inference_engine():
     if not os.environ.get("CHECKPOINT_PATH"):
         CHECKPOINT_PATH = str(worker_path(meta.get("checkpoint_path", DEFAULT_CKPT)))
     state["meta"] = meta
-    for filename, hash_key in [("image_embeddings.index", "image_index_sha256"), ("text_embeddings.index", "text_index_sha256"), ("image_paths.json", "image_paths_sha256"), ("captions.json", "captions_sha256")]:
+    for filename, hash_key in [("image_embeddings.index", "image_index_sha256"), ("text_embeddings.index", "text_index_sha256"), ("image_paths.json", "image_paths_sha256"), ("captions.json", "captions_sha256"), ("product_ids.json", "product_ids_sha256")]:
         if meta.get(hash_key) and _sha256_file(os.path.join(VECTOR_DB_DIR, filename)) != meta[hash_key]:
             raise RuntimeError(f"Index artifact hash mismatch: {filename}")
     state["active_version"] = meta.get("index_version", "v1-production")
@@ -148,16 +189,11 @@ def setup_inference_engine():
 
     # Load Model
     ckpt_raw = None
-    model_name = os.environ.get("CLIP_MODEL_NAME", meta.get("clip_model_name", "openai/clip-vit-base-patch16"))
+    model_name = os.environ.get("CLIP_MODEL_NAME", meta.get("clip_model_name", "openai/clip-vit-base-patch32"))
     if os.path.exists(CHECKPOINT_PATH):
-        ckpt_raw = torch.load(CHECKPOINT_PATH, map_location=device)
+        ckpt_raw = torch.load(CHECKPOINT_PATH, map_location=device, weights_only=True)
         sd = ckpt_raw.get("model_state_dict", ckpt_raw) if isinstance(ckpt_raw, dict) else ckpt_raw
-        patch_weight = sd.get("clip.vision_model.embeddings.patch_embedding.weight")
-        if patch_weight is not None:
-            if patch_weight.shape[-1] == 16:
-                model_name = "openai/clip-vit-base-patch16"
-            elif patch_weight.shape[-1] == 32:
-                model_name = "openai/clip-vit-base-patch32"
+        model_name = checkpoint_model_name(sd, model_name)
 
     print(f"    -> Using backbone model: {model_name}")
     model = MRL_CrossModal_Model(model_name=model_name).to(device)
@@ -214,11 +250,18 @@ def setup_inference_engine():
         raise RuntimeError("Index/path/caption mapping counts differ")
 
     ids_path = os.path.join(VECTOR_DB_DIR, "product_ids.json")
+    state.pop("product_ids", None)
     if os.path.isfile(ids_path):
         with open(ids_path, encoding="utf-8") as source:
             state["product_ids"] = json.load(source)
         if len(state["product_ids"]) != actual_ntotal:
             raise RuntimeError("Product ID mapping count differs from index")
+
+    payload = validate_search_documents(
+        VECTOR_DB_DIR, meta, state.get("product_ids", state["image_paths"]), actual_ntotal
+    )
+    state["search_documents"] = payload
+    state["product_retriever"] = _product_retriever(state, payload)
 
     state["transform"] = transforms.Compose([
         transforms.Resize(224, interpolation=transforms.InterpolationMode.BICUBIC),
@@ -231,8 +274,6 @@ def setup_inference_engine():
 
     if USE_RERANKING:
         state["reranker"] = TwoStageReranker(mode=RERANK_MODE)
-    if USE_AQE:
-        state["aqe_expander"] = AlphaQueryExpander(alpha=AQE_ALPHA, top_k=AQE_TOP_K)
 
     print("[+] Semantic Search Inference Engine Ready!")
     print("=" * 60)
@@ -283,6 +324,8 @@ def load_catalog_snapshot(folder):
         indexes[dim] = sub
     candidate = dict(state)
     candidate.update(meta=meta, active_version=meta["index_version"], supported_dims=meta["supported_dims"], image_indexes=indexes, db_vecs_512=torch.tensor(vectors, dtype=torch.float32), image_paths=paths, captions=captions, product_ids=ids)
+    payload = validate_search_documents(root, meta, ids, index.ntotal)
+    candidate.update(search_documents=payload, product_retriever=_product_retriever(candidate, payload))
     return candidate
 
 
@@ -322,6 +365,58 @@ app = FastAPI(title="AuraFind AI Inference Engine", version="2.0", lifespan=life
 
 # Synchronous Inference Workers (executed in thread pool)
 
+def execute_candidate_search(text_query: str, target_dim: int, search_mode: str,
+                             retrieval_mode: str = "hybrid", eligible_product_ids=None):
+    """Retrieve a whole product pool using one pinned model/index/lexical state."""
+    snapshot = state
+    t_start = time.perf_counter()
+    t_encode = time.perf_counter()
+    tokens = snapshot["tokenizer"](
+        text_query, padding="max_length", truncation=True,
+        max_length=MAX_LENGTH, return_tensors="pt",
+    )
+    with torch.inference_mode():
+        features = snapshot["model"].extract_text_features(
+            tokens["input_ids"].to(snapshot["device"]),
+            tokens["attention_mask"].to(snapshot["device"]),
+        )
+    if snapshot["device"] == "cuda":
+        torch.cuda.synchronize()
+    encode_ms = round((time.perf_counter() - t_encode) * 1000, 2)
+    retriever = snapshot.get("product_retriever")
+    if retriever is None:
+        retriever = _product_retriever(snapshot, snapshot.get("search_documents"))
+    result = retriever.search(
+        text_query, features.cpu().numpy(), target_dim, search_mode,
+        retrieval_mode, eligible_product_ids,
+    )
+    data = []
+    for hit in result["data"]:
+        vector_id = hit["vector_id"]
+        data.append({
+            **hit, "product_id": snapshot["image_paths"][vector_id],
+            "caption": snapshot["captions"][vector_id],
+        })
+    adaptive = search_mode == "adaptive" and RERANK_STAGE1_DIM in snapshot["supported_dims"]
+    return {
+        "status": "success", "index_version": snapshot["active_version"],
+        "data": data, "truncated": result["truncated"],
+        "search_config": {
+            "requested_dim": target_dim, "search_mode": "adaptive" if adaptive else "direct",
+            "stage1_dim": RERANK_STAGE1_DIM if adaptive else target_dim,
+            "stage2_dim": 512 if adaptive else None, "aqe_enabled": False,
+            "retrieval_mode": retrieval_mode,
+            "effective_retrieval_mode": result["effective_retrieval_mode"],
+            "lexical_available": snapshot.get("search_documents") is not None,
+            "fallback_reason": result.get("fallback_reason"),
+        },
+        "timing": {
+            **result["timing"], "encode_ms": encode_ms, "aqe_ms": 0.0,
+            "worker_total_ms": round((time.perf_counter() - t_start) * 1000, 2),
+        },
+    }
+
+
 def execute_text_search(text_query: str, target_dim: int, search_mode: str) -> Dict[str, Any]:
     snapshot = state
     t_start = time.perf_counter()
@@ -331,7 +426,6 @@ def execute_text_search(text_query: str, target_dim: int, search_mode: str) -> D
     image_indexes = snapshot["image_indexes"]
     db_vecs_512 = snapshot["db_vecs_512"]
     reranker = snapshot["reranker"]
-    aqe_expander = snapshot["aqe_expander"]
     captions = snapshot["captions"]
 
     # 1. Tokenize & Encode
@@ -357,19 +451,11 @@ def execute_text_search(text_query: str, target_dim: int, search_mode: str) -> D
 
     if search_mode == "adaptive" and USE_RERANKING and db_vecs_512 is not None and RERANK_STAGE1_DIM in image_indexes:
         stage2_dim = 512
-        query_vec_512 = features_512.squeeze(0).cpu()  # [512]
-
-        # AQE Expansion
-        if USE_AQE and aqe_expander is not None:
-            t_aqe_start = time.perf_counter()
-            refined_vec = aqe_expander.expand(query_vec_512, db_vecs_512).squeeze(0)
-            aqe_ms = round((time.perf_counter() - t_aqe_start) * 1000, 2)
-        else:
-            refined_vec = F.normalize(query_vec_512, dim=-1)
+        query_vec_512 = F.normalize(features_512.squeeze(0).cpu(), dim=-1)
 
         # Stage 1: Fast FAISS retrieval with 64D
         t_s1_start = time.perf_counter()
-        query_64 = refined_vec[:RERANK_STAGE1_DIM].unsqueeze(0).numpy().astype(np.float32)
+        query_64 = query_vec_512[:RERANK_STAGE1_DIM].unsqueeze(0).numpy().astype(np.float32)
         faiss.normalize_L2(query_64)
         _, stage1_raw = image_indexes[RERANK_STAGE1_DIM].search(query_64, RERANK_POOL_SIZE)
         candidates = [c for c in stage1_raw[0].tolist() if c != -1]
@@ -378,7 +464,7 @@ def execute_text_search(text_query: str, target_dim: int, search_mode: str) -> D
         # Stage 2: 512D Cosine Reranking
         t_rr_start = time.perf_counter()
         indices_scores = reranker.rerank_with_cosine(
-            refined_vec, db_vecs_512, candidates, top_k=10
+            query_vec_512, db_vecs_512, candidates, top_k=10
         )
         rerank_ms = round((time.perf_counter() - t_rr_start) * 1000, 2)
     else:
@@ -416,7 +502,11 @@ def execute_text_search(text_query: str, target_dim: int, search_mode: str) -> D
             "search_mode": "adaptive" if stage2_dim is not None else "direct",
             "stage1_dim": RERANK_STAGE1_DIM if stage2_dim is not None else target_dim,
             "stage2_dim": stage2_dim,
-            "aqe_enabled": (USE_AQE and stage2_dim is not None and aqe_expander is not None),
+            "aqe_enabled": False,
+            "retrieval_mode": "dense",
+            "effective_retrieval_mode": "dense",
+            "lexical_available": snapshot.get("search_documents") is not None,
+            "fallback_reason": None,
         },
         "timing": {
             "encode_ms": encode_ms,
@@ -553,6 +643,9 @@ async def get_config():
         "supported_dims": state["supported_dims"],
         "active_index_version": state["active_version"],
         "search_mode_default": "adaptive",
+        "text_retrieval_mode_default": default_text_retrieval_mode(),
+        "supported_retrieval_modes": ["dense", "hybrid"],
+        "lexical_available": state.get("search_documents") is not None,
         "default_dim": DEFAULT_DIMENSION,
         "dataset_name": state["meta"].get("dataset_name", "legacy"),
         "dataset_split": state["meta"].get("dataset_split"),
@@ -560,6 +653,9 @@ async def get_config():
         "num_products": state["meta"].get("num_products"),
         "catalog_source": state["meta"].get("catalog_source"),
         "model_kind": state["meta"].get("model_kind"),
+        "clip_model_name": state.get("model_name"),
+        "checkpoint_name": Path(state["meta"].get("checkpoint_path", "")).name,
+        "checkpoint_sha256": state["meta"].get("checkpoint_sha256"),
         "commerce_data_note": state["meta"].get("commerce_data_note"),
     }
 
@@ -569,6 +665,7 @@ async def search_by_text(
     query: str = Form(...),
     mrl_dimension: int = Form(DEFAULT_DIMENSION),
     search_mode: str = Form("adaptive"),
+    retrieval_mode: str = Form("dense"),
 ):
     if not inference_ready():
         raise HTTPException(status_code=503, detail="Search index is not ready")
@@ -584,17 +681,53 @@ async def search_by_text(
     mode = search_mode.lower()
     if mode not in ("direct", "adaptive"):
         raise HTTPException(status_code=400, detail="Invalid search_mode")
+    retrieval = retrieval_mode.lower()
+    if retrieval not in ("dense", "hybrid"):
+        raise HTTPException(status_code=400, detail="Invalid retrieval_mode")
 
     loop = asyncio.get_running_loop()
     async with semaphore:
         try:
-            result = await loop.run_in_executor(None, execute_text_search, query, mrl_dimension, mode)
+            if retrieval == "hybrid":
+                result = await loop.run_in_executor(None, execute_candidate_search, query, mrl_dimension, mode, retrieval)
+                result["data"] = result["data"][:10]
+            else:
+                result = await loop.run_in_executor(None, execute_text_search, query, mrl_dimension, mode)
             return JSONResponse(content=result)
         except Exception as e:
             return JSONResponse(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 content={"status": "error", "message": str(e)}
             )
+
+
+class CandidateSearchRequest(BaseModel):
+    query: str
+    mrl_dimension: int = DEFAULT_DIMENSION
+    search_mode: str = "adaptive"
+    retrieval_mode: str = "dense"
+    eligible_product_ids: Optional[List[str]] = None
+
+
+@app.post("/infer/search/candidates")
+async def search_candidates(request: CandidateSearchRequest):
+    if not inference_ready():
+        raise HTTPException(status_code=503, detail="Search index is not ready")
+    if not request.query.strip():
+        raise HTTPException(status_code=400, detail="Query text cannot be empty")
+    if request.mrl_dimension not in state["supported_dims"]:
+        raise HTTPException(status_code=400, detail="Unsupported mrl_dimension")
+    if request.search_mode not in ("direct", "adaptive"):
+        raise HTTPException(status_code=400, detail="Invalid search_mode")
+    if request.retrieval_mode not in ("dense", "hybrid"):
+        raise HTTPException(status_code=400, detail="Invalid retrieval_mode")
+    loop = asyncio.get_running_loop()
+    async with semaphore:
+        result = await loop.run_in_executor(
+            None, execute_candidate_search, request.query, request.mrl_dimension,
+            request.search_mode, request.retrieval_mode, request.eligible_product_ids,
+        )
+    return JSONResponse(content=result)
 
 
 @app.post("/infer/search/image")

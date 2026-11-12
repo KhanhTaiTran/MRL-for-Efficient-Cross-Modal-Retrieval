@@ -64,27 +64,43 @@ export interface Order {
   >[];
 }
 export const getCart = () => authenticatedRequest<{ data: Cart }>("/cart");
-export const setCartItem = (variant: string, quantity: number) =>
-  authenticatedRequest<{ data: Cart }>(
+function cartUpdated() {
+  if (typeof window !== "undefined")
+    window.dispatchEvent(new Event("aurafind-cart-updated"));
+}
+export const setCartItem = async (variant: string, quantity: number) => {
+  const result = await authenticatedRequest<{ data: Cart }>(
     `/cart/items/${encodeURIComponent(variant)}`,
     {
       method: "PUT",
       body: JSON.stringify({ quantity }),
     },
   );
-export const removeCartItem = (variant: string) =>
-  authenticatedRequest<{ data: Cart }>(
+  cartUpdated();
+  return result;
+};
+export const removeCartItem = async (variant: string) => {
+  const result = await authenticatedRequest<{ data: Cart }>(
     `/cart/items/${encodeURIComponent(variant)}`,
     {
       method: "DELETE",
     },
   );
-export const checkout = (key: string, input: CheckoutInput) =>
-  authenticatedRequest<{ data: Order; replayed: boolean }>("/checkout", {
-    method: "POST",
-    headers: { "Idempotency-Key": key },
-    body: JSON.stringify(input),
-  });
+  cartUpdated();
+  return result;
+};
+export const checkout = async (key: string, input: CheckoutInput) => {
+  const result = await authenticatedRequest<{ data: Order; replayed: boolean }>(
+    "/checkout",
+    {
+      method: "POST",
+      headers: { "Idempotency-Key": key },
+      body: JSON.stringify(input),
+    },
+  );
+  cartUpdated();
+  return result;
+};
 export const money = (cents: number, currency = "USD") =>
   new Intl.NumberFormat("en-US", { style: "currency", currency }).format(
     cents / 100,

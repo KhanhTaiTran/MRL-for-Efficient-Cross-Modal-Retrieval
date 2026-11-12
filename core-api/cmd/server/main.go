@@ -14,6 +14,7 @@ import (
 	"core-api/internal/broker"
 	"core-api/internal/catalog"
 	"core-api/internal/commerce"
+	searchservice "core-api/internal/search"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -116,14 +117,15 @@ func main() {
 
 	// Register API Routes
 	apiGroup := r.Group("/api")
-	searchHandler := api.NewSearchHandler(inferClient)
+	textSearch := searchservice.NewService(inferClient, nil)
+	searchHandler := api.NewSearchHandler(inferClient).WithSearchService(textSearch)
 	if db != nil {
 		mediaBase := os.Getenv("PUBLIC_MEDIA_BASE_URL")
 		if mediaBase == "" {
 			mediaBase = "http://localhost:9000/products"
 		}
 		repo := &catalog.Repository{DB: db, MediaBase: mediaBase}
-		api.NewProductHandler(repo).RegisterRoutes(apiGroup)
+		api.NewProductHandler(repo).WithSearchService(textSearch).RegisterRoutes(apiGroup)
 		searchHandler.WithCatalog(repo)
 		value := func(key, fallback string) string {
 			if v := os.Getenv(key); v != "" {

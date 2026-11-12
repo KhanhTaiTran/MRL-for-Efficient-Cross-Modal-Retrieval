@@ -26,6 +26,7 @@ import torch
 from transformers import AutoTokenizer
 from torchvision import transforms
 from ai_worker.models.mrl import MRL_CrossModal_Model
+from ai_worker.indexing.search_documents import build_search_documents, write_search_documents
 
 FIXTURES=[
  ('red-cotton-tshirt','Red cotton T-shirt','tops','red',29,'shirt'),
@@ -110,8 +111,9 @@ def main():
         idx=faiss.IndexFlatIP(512);idx.add(vectors);faiss.write_index(idx,str(out/filename))
     for filename,data in [('image_paths.json',paths),('captions.json',captions),('product_ids.json',ids),('products.json',products)]:
         (out/filename).write_text(json.dumps(data,indent=2),encoding='utf-8')
+    search_metadata=write_search_documents(out, build_search_documents(products, ids))
     fixture_hash=hashlib.sha256(json.dumps(FIXTURES).encode()).hexdigest()
-    version=str(uid('index:'+digest(checkpoint)+fixture_hash+digest(out/'image_embeddings.index')+digest(out/'text_embeddings.index')))
+    version=str(uid('index:'+digest(checkpoint)+fixture_hash+digest(out/'image_embeddings.index')+digest(out/'text_embeddings.index')+search_metadata['search_documents_sha256']))
     meta={'index_version':version,'checkpoint_path':str(checkpoint),'checkpoint_sha256':digest(checkpoint),
           'clip_model_name':model_name,'tokenizer_name':model_name,'image_size':224,
           'normalize_mean':[.48145466,.4578275,.40821073],'normalize_std':[.26862954,.26130258,.27577711],
@@ -119,6 +121,8 @@ def main():
           'dataset_name':'AuraFind demo illustrations','dataset_split':'demo','image_root':str(images),
           'model_kind':'pretrained-clip-not-mrl','fixture_hash':fixture_hash,'built_at':datetime.now(timezone.utc).isoformat()}
     for filename,key in [('image_embeddings.index','image_index_sha256'),('text_embeddings.index','text_index_sha256'),('image_paths.json','image_paths_sha256'),('captions.json','captions_sha256')]:meta[key]=digest(out/filename)
+    meta['product_ids_sha256']=digest(out/'product_ids.json')
+    meta.update(search_metadata)
     print('Publishing SQL catalog and versioned mappings...',flush=True)
     with psycopg.connect(os.environ['DATABASE_URL']) as db:
         # Serialize repeated seed processes and keep catalog/mapping publication transactional.

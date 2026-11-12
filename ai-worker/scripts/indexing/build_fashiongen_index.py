@@ -23,6 +23,7 @@ from transformers import AutoTokenizer
 from ai_worker.datasets.fashiongen import clip_transform
 from ai_worker.models.mrl import MRL_CrossModal_Model
 from ai_worker.paths import WORKER_ROOT
+from ai_worker.indexing.search_documents import build_search_documents, write_search_documents
 
 
 def sha256(path):
@@ -103,6 +104,8 @@ def build(args):
             'captions_sha256':sha256(staging/'captions.json'),
             'verification_samples':samples,'built_at':datetime.now(timezone.utc).isoformat(),
         }
+        meta.update(product_ids_sha256=sha256(staging/'product_ids.json'))
+        meta.update(write_search_documents(staging, build_search_documents(rows, product_ids)))
         write('index_meta.json',meta)
         if output.exists():
             backup=output.with_name(output.name+'.backup-'+timestamp)
@@ -132,7 +135,7 @@ if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--csv',type=Path,required=True)
     parser.add_argument('--images',type=Path,required=True)
-    parser.add_argument('--checkpoint',type=Path,default=WORKER_ROOT/'checkpoints/mrl_fashiongen_latest.pt')
+    parser.add_argument('--checkpoint',type=Path,default=WORKER_ROOT/'checkpoints/mrl_fashiongen_best.pt')
     parser.add_argument('--image-features',type=Path,default=WORKER_ROOT/'embeddings/fgen_val_mrl_image_features.pt')
     parser.add_argument('--text-features',type=Path,default=WORKER_ROOT/'embeddings/fgen_val_mrl_text_features.pt')
     parser.add_argument('--product-ids',type=Path,default=WORKER_ROOT/'embeddings/fgen_val_product_ids.json')

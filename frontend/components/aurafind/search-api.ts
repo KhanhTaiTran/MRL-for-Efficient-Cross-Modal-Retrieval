@@ -32,15 +32,18 @@ export async function searchByText(
   query: string,
   mrlDimension: number,
   searchMode: "direct" | "adaptive" = "direct",
+  retrievalMode: "dense" | "hybrid" = "dense",
 ): Promise<SearchResponse> {
   const formData = new FormData();
   formData.append("query", query.trim());
+  formData.append("retrieval_mode", retrievalMode);
   formData.append("mrl_dimension", String(mrlDimension));
   formData.append("search_mode", searchMode);
 
   const response = await fetch(`${API_BASE_URL}/api/search/text`, {
     method: "POST",
     body: formData,
+    signal: AbortSignal.timeout(20000),
   });
 
   return parseSearchResponse(response);
@@ -59,22 +62,26 @@ export async function searchByImage(
   const response = await fetch(`${API_BASE_URL}/api/search/image`, {
     method: "POST",
     body: formData,
+    signal: AbortSignal.timeout(20000),
   });
 
   return parseSearchResponse(response);
 }
 
-export async function fetchSearchConfig(): Promise<{
+export async function fetchSearchConfig(signal?: AbortSignal): Promise<{
   supported_dims: number[];
   active_index_version: string;
   default_dim: number;
+  text_retrieval_mode_default?: "dense" | "hybrid";
+  supported_retrieval_modes?: ("dense" | "hybrid")[];
+  lexical_available?: boolean;
   catalog_source?: string;
   num_products?: number;
   num_vectors?: number;
   model_kind?: string;
   commerce_data_note?: string;
 }> {
-  const response = await fetch(`${API_BASE_URL}/api/search/config`);
+  const response = await fetch(`${API_BASE_URL}/api/search/config`, { signal });
   if (!response.ok) {
     throw new Error("Failed to fetch search configuration");
   }

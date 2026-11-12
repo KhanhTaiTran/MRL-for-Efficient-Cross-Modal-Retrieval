@@ -33,7 +33,6 @@ if __name__ == "__main__":
     print("Testing MRL Model Architecture...")
     model = MRL_CrossModal_Model()
     
-    # Tạo dummy data
     dummy_img = torch.randn(2, 3, 224, 224)
     dummy_input_ids = torch.randint(0, 1000, (2, 77))
     dummy_mask = torch.ones((2, 77))

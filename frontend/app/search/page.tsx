@@ -1,5 +1,4 @@
 import { CatalogBrowser } from "components/catalog/catalog-browser";
-import { StoreHeader } from "components/layout/store-header";
 
 export const metadata = {
   title: "Shop",
@@ -8,14 +7,18 @@ export const metadata = {
 export default async function SearchPage({
   searchParams,
 }: {
-  searchParams: Promise<{ category?: string; q?: string }>;
+  searchParams: Promise<{
+    category?: string;
+    q?: string;
+    sort?: string;
+    page?: string;
+  }>;
 }) {
   const params = await searchParams;
   return (
     <>
-      <StoreHeader />
       <CatalogBrowser
-        key={`${params.category ?? ""}:${params.q ?? ""}`}
+        key={`${params.category ?? ""}:${params.q ?? ""}:${params.sort ?? ""}:${params.page ?? ""}`}
         initialCategory={params.category}
         initialQuery={params.q}
       />

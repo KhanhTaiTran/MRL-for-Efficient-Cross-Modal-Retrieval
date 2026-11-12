@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { ArrowUpRight, Sparkles, Star } from "lucide-react";
 import Link from "next/link";
+import { displayText } from "lib/display-text";
 import { useEffect, useState } from "react";
 import { getImageUrl, type EnrichedProduct } from "./types";
 
@@ -34,9 +35,12 @@ export function ProductCard({
   isScanning = false,
 }: ProductCardProps) {
   const [isHovered, setIsHovered] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
+  const name = displayText(product.displayName);
+  const brand = displayText(product.displayBrand);
   const isDesktop = useIsDesktopHover();
 
-  const showQuickAdd = isDesktop ? isHovered : true;
+  const showQuickAdd = isDesktop ? isHovered || isFocused : true;
   const imageScale = isDesktop && isHovered ? 1.06 : 1;
 
   return (
@@ -46,19 +50,24 @@ export function ProductCard({
       animate={{ opacity: 1, y: 0 }}
       transition={{
         duration: 0.45,
-        delay: index * 0.06,
+        delay: Math.min(index, 6) * 0.04,
         ease: [0.22, 1, 0.36, 1],
       }}
       onMouseEnter={() => isDesktop && setIsHovered(true)}
       onMouseLeave={() => isDesktop && setIsHovered(false)}
-      className="group relative"
+      onFocus={() => setIsFocused(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget))
+          setIsFocused(false);
+      }}
+      className="group relative min-w-0"
     >
       <div className="relative overflow-hidden rounded-2xl bg-neutral-100 dark:bg-neutral-900">
         <div className="relative aspect-[3/4] overflow-hidden">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <motion.img
             src={product.image_url || getImageUrl(product.product_id)}
-            alt={product.displayName}
+            alt={name}
             crossOrigin="anonymous"
             loading="lazy"
             animate={{ scale: imageScale }}
@@ -101,7 +110,7 @@ export function ProductCard({
               initial={false}
               animate={{ y: showQuickAdd ? 0 : "100%" }}
               transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-              className="absolute inset-x-0 bottom-0 p-2 sm:p-3"
+              className="absolute inset-x-0 bottom-0 p-2 group-focus-within:translate-y-0 sm:p-3"
             >
               <Link
                 href={`/product/${product.handle}`}
@@ -118,19 +127,19 @@ export function ProductCard({
       <div className="space-y-2 px-0.5 pb-1 pt-3 sm:px-1">
         {product.displayBrand && (
           <p className="truncate text-xs font-medium text-neutral-500 dark:text-neutral-400">
-            {product.displayBrand}
+            {brand}
           </p>
         )}
         <h3
-          title={product.displayName}
-          className="line-clamp-2 min-h-10 text-sm font-medium leading-5 text-neutral-900 dark:text-white"
+          title={name}
+          className="line-clamp-2 min-h-10 break-words text-sm font-medium leading-5 text-neutral-900 dark:text-white"
         >
           {product.handle ? (
             <Link
               href={`/product/${product.handle}`}
               className="hover:underline"
             >
-              {product.displayName}
+              {name}
             </Link>
           ) : (
             product.displayName

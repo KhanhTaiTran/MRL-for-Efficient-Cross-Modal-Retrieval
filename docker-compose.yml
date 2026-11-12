@@ -10,6 +10,7 @@ x-ai: &ai
     OMP_NUM_THREADS: "1"
     MKL_NUM_THREADS: "1"
     INFERENCE_CONCURRENCY: "2"
+    HYBRID_SEARCH_ENABLED: ${HYBRID_SEARCH_ENABLED:-1}
   volumes: &ai-volumes
     - vector_data:/data/vector_db
     - model_cache:/data/huggingface

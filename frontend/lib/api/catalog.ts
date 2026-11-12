@@ -32,12 +32,21 @@ export interface CatalogProduct {
   is_featured: boolean;
   search_status: string;
   default_variant_id: string;
+  rank_score?: number;
+  similarity_score?: number;
   images?: ProductImage[];
   variants?: ProductVariant[];
 }
 export interface CatalogResponse {
   data: CatalogProduct[];
   pagination: { page: number; limit: number; total: number; pages: number };
+  search?: {
+    index_version: string;
+    retrieval_mode: "dense" | "hybrid";
+    effective_retrieval_mode: "dense" | "hybrid";
+    fallback_reason?: string;
+    truncated: boolean;
+  };
 }
 export const getProduct = (handle: string, signal?: AbortSignal) =>
   request<{ data: CatalogProduct }>(`/products/${encodeURIComponent(handle)}`, {

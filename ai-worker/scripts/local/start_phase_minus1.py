@@ -17,7 +17,9 @@ from ai_worker.paths import REPOSITORY_ROOT
 def main():
     root=REPOSITORY_ROOT
     worker=root/'ai-worker'
-    meta=json.loads((worker/'vector_db/index_meta.json').read_text(encoding='utf-8'))
+    vector_db=Path(os.environ.get('VECTOR_DB_DIR',str(worker/'vector_db')))
+    if not vector_db.is_absolute(): vector_db=worker/vector_db
+    meta=json.loads((vector_db/'index_meta.json').read_text(encoding='utf-8'))
     images=Path(os.environ.get('IMG_BASE_DIR',meta['image_root']))
     if not images.is_dir(): raise FileNotFoundError(images)
     for port in (8001,8080):
@@ -27,8 +29,10 @@ def main():
     logs=root/'tmp'; logs.mkdir(exist_ok=True)
     binary=logs/('phase-local-gateway.exe' if os.name=='nt' else 'phase-local-gateway')
     subprocess.run(['go','build','-o',str(binary),'./cmd/server'],cwd=root/'core-api',check=True)
-    env={**os.environ,'IMG_BASE_DIR':str(images),'VECTOR_DB_DIR':str(worker/'vector_db'),
-         'CHECKPOINT_PATH':str(worker/meta['checkpoint_path']),
+    checkpoint=Path(os.environ.get('CHECKPOINT_PATH',meta['checkpoint_path']))
+    if not checkpoint.is_absolute(): checkpoint=worker/checkpoint
+    env={**os.environ,'IMG_BASE_DIR':str(images),'VECTOR_DB_DIR':str(vector_db),
+         'CHECKPOINT_PATH':str(checkpoint),
          'HF_HUB_OFFLINE':'1','TRANSFORMERS_OFFLINE':'1',
          'OMP_NUM_THREADS':'1','MKL_NUM_THREADS':'1','INFER_API_URL':'http://127.0.0.1:8001','PORT':'8080'}
     started=[]

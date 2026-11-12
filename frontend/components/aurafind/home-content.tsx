@@ -5,7 +5,7 @@ import { motion } from "framer-motion";
 export function HeroBanner() {
   return (
     <section className="relative overflow-hidden">
-      <div className="mx-auto max-w-[1600px] px-4 sm:px-6 lg:px-8">
+      <div className="site-container">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}

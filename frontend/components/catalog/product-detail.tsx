@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { formatPrice, type CatalogProduct } from "lib/api/catalog";
-import { StoreHeader } from "components/layout/store-header";
 import { useRouter } from "next/navigation";
 import { useAuth } from "components/auth/auth-provider";
 import { setCartItem } from "lib/api/commerce";
-import { ProductEngagement } from "./product-engagement";
+import { ProductEngagement, WishlistButton } from "./product-engagement";
+import { categoryLabel, displayText } from "lib/display-text";
+import { ArrowLeft, ArrowUpRight, ShoppingBag } from "lucide-react";
 
 export function ProductDetail({ product }: { product: CatalogProduct }) {
   const router = useRouter();
@@ -18,24 +19,34 @@ export function ProductDetail({ product }: { product: CatalogProduct }) {
     product.default_variant_id || product.variants?.[0]?.id || "",
   );
   const [image, setImage] = useState(product.image_url);
+  const [backHref, setBackHref] = useState("/search");
+  useEffect(() => {
+    try {
+      const lastCatalog = sessionStorage.getItem("aurafind-catalog-url");
+      if (lastCatalog && /^\/search(?:\?|$)/.test(lastCatalog))
+        setBackHref(lastCatalog);
+    } catch {
+      /* Storage is optional. */
+    }
+  }, []);
+  const name = displayText(product.name);
   const variant = product?.variants?.find((value) => value.id === variantID);
   return (
     <>
-      <StoreHeader />
-      <div className="mx-auto max-w-7xl px-5 py-8 sm:px-8">
+      <div className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 sm:py-10 lg:px-8">
         <Link
-          href="/search"
-          className="text-sm text-neutral-500 underline underline-offset-4"
+          href={backHref}
+          className="inline-flex min-h-11 items-center gap-2 text-sm text-neutral-600 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-white"
         >
-          Back to products
+          <ArrowLeft className="h-4 w-4" /> Back to products
         </Link>
         {
-          <div className="mt-8 grid gap-10 md:grid-cols-2 lg:gap-16">
-            <div>
-              <div className="aspect-[3/4] overflow-hidden rounded-2xl bg-white">
+          <div className="mt-5 grid gap-8 md:grid-cols-2 lg:gap-16">
+            <div className="min-w-0">
+              <div className="aspect-[3/4] max-h-[680px] overflow-hidden rounded-2xl border border-neutral-200 bg-white dark:border-neutral-800">
                 <img
                   src={image}
-                  alt={product.name}
+                  alt={name}
                   className="h-full w-full object-contain"
                 />
               </div>
@@ -45,13 +56,13 @@ export function ProductDetail({ product }: { product: CatalogProduct }) {
                     <button
                       key={value.id}
                       onClick={() => setImage(value.url)}
-                      aria-label={`View ${value.alt || product.name}`}
+                      aria-label={`View ${displayText(value.alt) || name}`}
                       aria-pressed={image === value.url}
-                      className="h-20 w-16 overflow-hidden rounded-lg border"
+                      className={`h-20 w-16 overflow-hidden rounded-lg border-2 bg-white transition ${image === value.url ? "border-neutral-900 dark:border-white" : "border-transparent hover:border-neutral-300 dark:hover:border-neutral-600"}`}
                     >
                       <img
                         src={value.url}
-                        alt={value.alt}
+                        alt={displayText(value.alt)}
                         className="h-full w-full object-contain"
                       />
                     </button>
@@ -59,26 +70,28 @@ export function ProductDetail({ product }: { product: CatalogProduct }) {
                 </div>
               )}
             </div>
-            <div className="py-3">
-              <p className="text-sm text-neutral-500">{product.brand}</p>
-              <h1 className="mt-3 text-3xl font-semibold tracking-tight sm:text-4xl">
-                {product.name}
+            <div className="min-w-0 py-2 lg:py-5">
+              <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                {displayText(product.brand)}
+              </p>
+              <h1 className="mt-3 text-2xl font-semibold tracking-tight break-words text-balance sm:text-3xl lg:text-4xl">
+                {name}
               </h1>
               <p className="mt-5 text-2xl font-semibold">
                 {formatPrice(variant?.price ?? product.price, product.currency)}
               </p>
               {product.commerce_data_note && (
-                <p className="mt-3 text-xs leading-5 text-neutral-500">
+                <p className="mt-3 text-xs leading-5 text-neutral-500 dark:text-neutral-400">
                   {product.commerce_data_note}
                 </p>
               )}
-              <p className="mt-4 text-sm text-neutral-500">
+              <p className="mt-4 text-sm text-neutral-500 dark:text-neutral-400">
                 {product.review_count > 0 && product.rating_average !== null
                   ? `${product.rating_average.toFixed(1)} out of 5 · ${product.review_count} reviews`
                   : "No reviews yet"}
               </p>
               <p className="mt-8 whitespace-pre-line text-sm leading-7 text-neutral-600 dark:text-neutral-300">
-                {product.description}
+                {displayText(product.description)}
               </p>
               {!!product.variants?.length && (
                 <fieldset className="mt-8">
@@ -99,7 +112,7 @@ export function ProductDetail({ product }: { product: CatalogProduct }) {
                   </div>
                 </fieldset>
               )}
-              <p className="mt-5 text-sm text-neutral-500">
+              <p className="mt-5 text-sm text-neutral-500 dark:text-neutral-400">
                 {variant?.is_available && variant.stock > 0
                   ? "In stock"
                   : "Out of stock"}
@@ -135,8 +148,9 @@ export function ProductDetail({ product }: { product: CatalogProduct }) {
                     setAdding(false);
                   }
                 }}
-                className="mt-6 block rounded-xl bg-neutral-900 px-6 py-3 text-sm font-semibold text-white disabled:opacity-50 dark:bg-white dark:text-neutral-900"
+                className="mt-6 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-neutral-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-neutral-700 disabled:opacity-50 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
               >
+                <ShoppingBag className="h-4 w-4" />
                 {adding ? "Adding…" : "Add to cart"}
               </button>
               {cartMessage && (
@@ -144,19 +158,22 @@ export function ProductDetail({ product }: { product: CatalogProduct }) {
                   {cartMessage}
                 </p>
               )}
-              <Link
-                href={`/?similar=${encodeURIComponent(product.handle)}`}
-                className="mt-8 inline-block rounded-xl bg-neutral-900 px-6 py-3 text-sm font-semibold text-white dark:bg-white dark:text-neutral-900"
-              >
-                Find similar styles
-              </Link>
-              <p className="mt-8 text-xs uppercase tracking-wider text-neutral-500">
-                {product.category}
+              <div className="mt-3 flex flex-wrap gap-3">
+                <WishlistButton id={product.id} handle={product.handle} />
+                <Link
+                  href={`/discover?similar=${encodeURIComponent(product.handle)}`}
+                  className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-neutral-300 px-4 py-3 text-sm font-medium transition hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
+                >
+                  Find similar styles <ArrowUpRight className="h-4 w-4" />
+                </Link>
+              </div>
+              <p className="mt-8 text-xs uppercase tracking-wider text-neutral-500 dark:text-neutral-400">
+                {categoryLabel(product.category)}
               </p>
             </div>
           </div>
         }
-        <ProductEngagement id={product.id} handle={product.handle} />
+        <ProductEngagement handle={product.handle} />
       </div>
     </>
   );

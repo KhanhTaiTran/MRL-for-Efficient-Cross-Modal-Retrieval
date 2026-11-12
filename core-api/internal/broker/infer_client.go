@@ -10,6 +10,8 @@ import (
 	"mime/multipart"
 	"net/http"
 	"time"
+
+	"core-api/internal/models"
 )
 
 // InferClient communicates with the Python FastAPI Inference Service over HTTP.
@@ -29,20 +31,26 @@ func NewInferClient(baseURL string, timeout time.Duration) *InferClient {
 
 // InferSearchResult represents an item returned by the Python worker.
 type InferSearchResult struct {
-	ProductID        string  `json:"product_id"`
-	CatalogProductID string  `json:"catalog_product_id,omitempty"`
-	VectorID         int     `json:"vector_id"`
-	SimilarityScore  float64 `json:"similarity_score"`
-	Caption          string  `json:"caption"`
+	ProductID        string                  `json:"product_id"`
+	CatalogProductID string                  `json:"catalog_product_id,omitempty"`
+	VectorID         int                     `json:"vector_id"`
+	SimilarityScore  float64                 `json:"similarity_score"`
+	Caption          string                  `json:"caption"`
+	RankScore        *float64                `json:"rank_score,omitempty"`
+	ImageCandidates  []models.ImageCandidate `json:"image_candidates,omitempty"`
 }
 
 // InferSearchConfig represents configuration echo from worker.
 type InferSearchConfig struct {
-	RequestedDim int    `json:"requested_dim"`
-	SearchMode   string `json:"search_mode"`
-	Stage1Dim    int    `json:"stage1_dim"`
-	Stage2Dim    *int   `json:"stage2_dim"`
-	AQEEnabled   bool   `json:"aqe_enabled"`
+	RequestedDim           int    `json:"requested_dim"`
+	SearchMode             string `json:"search_mode"`
+	Stage1Dim              int    `json:"stage1_dim"`
+	Stage2Dim              *int   `json:"stage2_dim"`
+	AQEEnabled             bool   `json:"aqe_enabled"`
+	RetrievalMode          string `json:"retrieval_mode,omitempty"`
+	EffectiveRetrievalMode string `json:"effective_retrieval_mode,omitempty"`
+	LexicalAvailable       bool   `json:"lexical_available"`
+	FallbackReason         string `json:"fallback_reason,omitempty"`
 }
 
 // InferTiming represents granular inference latency breakdown.
@@ -62,12 +70,37 @@ type InferResponse struct {
 	SearchConfig InferSearchConfig   `json:"search_config"`
 	Timing       InferTiming         `json:"timing"`
 	Message      string              `json:"message,omitempty"`
+	Truncated    bool                `json:"truncated"`
+	CatalogMs    float64             `json:"-"`
 }
 
 // SearchConfig holds user-specified retrieval parameters.
 type SearchConfig struct {
-	MRLDimension int
-	SearchMode   string // "direct" or "adaptive"
+	MRLDimension  int
+	SearchMode    string // "direct" or "adaptive"
+	RetrievalMode string // "dense" or "hybrid"; independent of MRL search mode.
+}
+
+type CandidateSearchRequest struct {
+	Query         string `json:"query"`
+	MRLDimension  int    `json:"mrl_dimension"`
+	SearchMode    string `json:"search_mode"`
+	RetrievalMode string `json:"retrieval_mode"`
+	// A pointer distinguishes an unrestricted request from an empty eligible set.
+	EligibleProductIDs *[]string `json:"eligible_product_ids,omitempty"`
+}
+
+func (c *InferClient) SearchCandidates(ctx context.Context, request CandidateSearchRequest) (*InferResponse, error) {
+	body, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode candidate request: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", c.baseURL+"/infer/search/candidates", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create candidate request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return c.do(req)
 }
 
 // SearchByText sends text query to POST /infer/search/text

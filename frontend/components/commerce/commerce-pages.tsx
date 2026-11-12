@@ -4,7 +4,6 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "components/auth/auth-provider";
-import { StoreHeader } from "components/layout/store-header";
 import { APIError, authenticatedRequest } from "lib/api/client";
 import {
   checkout,
@@ -18,9 +17,9 @@ import {
 } from "lib/api/commerce";
 
 const button =
-  "inline-block rounded-xl bg-neutral-900 px-6 py-3 text-sm font-semibold text-white disabled:opacity-50 dark:bg-white dark:text-neutral-900";
+  "inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-neutral-900 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200";
 const input =
-  "mt-2 w-full rounded-lg border border-neutral-300 bg-transparent px-3 py-2.5 dark:border-neutral-700";
+  "mt-2 min-h-11 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2.5 text-base text-neutral-900 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100";
 const message = (error: unknown) =>
   error instanceof Error ? error.message : "Please try again.";
 
@@ -29,9 +28,16 @@ function Frame({ title, children }: { title: string; children: ReactNode }) {
   const path = usePathname();
   return (
     <>
-      <StoreHeader />
-      <main className="mx-auto max-w-5xl px-6 py-12">
-        <h1 className="text-3xl font-semibold tracking-tight">{title}</h1>
+      <section className="mx-auto w-full max-w-[1440px] px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
+        <Link
+          href="/search"
+          className="mb-5 inline-flex min-h-8 items-center text-sm text-neutral-600 underline underline-offset-4 dark:text-neutral-400"
+        >
+          Continue shopping
+        </Link>
+        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+          {title}
+        </h1>
         {loading ? (
           <p className="mt-8" role="status">
             Loading your account…
@@ -49,7 +55,7 @@ function Frame({ title, children }: { title: string; children: ReactNode }) {
         ) : (
           children
         )}
-      </main>
+      </section>
     </>
   );
 }
@@ -107,10 +113,13 @@ function LoadState({
       )}
       {error && (
         <div className="mt-6">
-          <p role="alert" className="text-red-600">
+          <p role="alert" className="text-red-700 dark:text-red-400">
             {error}
           </p>
-          <button className="mt-3 underline" onClick={retry}>
+          <button
+            className="mt-3 min-h-11 underline underline-offset-4"
+            onClick={retry}
+          >
             Try again
           </button>
         </div>
@@ -168,7 +177,7 @@ export function CartPage() {
     <Frame title="Your cart">
       <LoadState {...state} retry={state.reload} />
       {error && (
-        <p role="alert" className="mt-5 text-red-600">
+        <p role="alert" className="mt-5 text-red-700 dark:text-red-400">
           {error}
         </p>
       )}
@@ -182,23 +191,23 @@ export function CartPage() {
               </Link>
             </div>
           ) : (
-            <div className="mt-10 grid gap-10 md:grid-cols-[1fr_280px]">
-              <div className="divide-y divide-neutral-200 dark:divide-neutral-800">
+            <div className="mt-8 grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-12">
+              <div className="min-w-0 divide-y divide-neutral-200 dark:divide-neutral-800">
                 {cart.items.map((item) => (
                   <article
                     key={item.variant_id}
-                    className="flex gap-5 py-6 first:pt-0"
+                    className="grid grid-cols-[64px_minmax(0,1fr)] gap-4 py-6 first:pt-0 sm:grid-cols-[80px_minmax(0,1fr)_auto] sm:gap-5"
                   >
                     {item.image_url && (
                       <img
                         src={item.image_url}
                         alt={item.name}
-                        className="h-28 w-20 rounded-lg bg-white object-contain"
+                        className="h-24 w-16 shrink-0 rounded-xl bg-white object-contain sm:h-28 sm:w-20"
                       />
                     )}
-                    <div className="min-w-0 flex-1">
+                    <div className="col-start-2 min-w-0">
                       <Link
-                        className="font-medium"
+                        className="break-words font-medium leading-6 hover:underline"
                         href={`/product/${item.handle}`}
                       >
                         {item.name}
@@ -211,7 +220,7 @@ export function CartPage() {
                         {money(item.price_cents, item.currency)} each
                       </p>
                       {(!item.is_available || item.stock < item.quantity) && (
-                        <p className="mt-2 text-sm text-red-600">
+                        <p className="mt-2 text-sm text-red-700 dark:text-red-400">
                           {item.is_available
                             ? `Only ${item.stock} left. Update quantity.`
                             : "Currently unavailable. Remove this item to continue."}
@@ -237,32 +246,33 @@ export function CartPage() {
                             max={99}
                             required
                             defaultValue={item.quantity}
-                            className="ml-2 w-16 rounded border bg-transparent p-1.5"
+                            className="ml-2 min-h-11 w-16 rounded-lg border border-neutral-300 bg-white px-2 text-base dark:border-neutral-700 dark:bg-neutral-900"
                           />
                         </label>
                         <button
                           disabled={busy || state.loading}
-                          className="text-sm underline"
+                          className="min-h-11 text-sm underline underline-offset-4 disabled:opacity-50"
                         >
                           Update
                         </button>
                         <button
                           type="button"
                           disabled={busy || state.loading}
-                          className="text-sm underline"
+                          className="min-h-11 text-sm text-neutral-600 underline underline-offset-4 disabled:opacity-50 dark:text-neutral-400"
                           onClick={() => void change(item.variant_id)}
                         >
                           Remove
                         </button>
                       </form>
                     </div>
-                    <p className="text-sm font-medium">
+                    <p className="col-start-2 text-sm font-semibold tabular-nums sm:col-start-3">
                       {money(item.price_cents * item.quantity, item.currency)}
                     </p>
                   </article>
                 ))}
               </div>
-              <aside className="space-y-6">
+              <aside className="space-y-6 rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6 dark:border-neutral-800 dark:bg-neutral-900/50">
+                <h2 className="text-lg font-semibold">Order summary</h2>
                 <Totals value={cart} />
                 <p className="text-sm text-neutral-500">
                   Stock is confirmed at checkout. This demo uses simulated
@@ -411,7 +421,7 @@ export function CheckoutPage() {
         Demo checkout · Payment is simulated. No money is charged.
       </p>
       {error && (
-        <p role="alert" className="mt-6 text-red-600">
+        <p role="alert" className="mt-6 text-red-700 dark:text-red-400">
           {error}
         </p>
       )}
@@ -453,8 +463,11 @@ export function CheckoutPage() {
           {cart &&
             restored === user?.id &&
             (cart.can_checkout ? (
-              <div className="mt-10 grid gap-12 md:grid-cols-[1fr_280px]">
-                <form onSubmit={submit} className="space-y-5">
+              <div className="mt-8 grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-12">
+                <form
+                  onSubmit={submit}
+                  className="min-w-0 space-y-5 rounded-2xl border border-neutral-200 bg-white p-5 sm:p-7 dark:border-neutral-800 dark:bg-neutral-900/50"
+                >
                   <h2 className="text-xl font-medium">Shipping address</h2>
                   {fields.map((field) => (
                     <label
@@ -479,17 +492,19 @@ export function CheckoutPage() {
                     {busy ? "Placing order…" : "Place demo order"}
                   </button>
                 </form>
-                <aside className="space-y-6">
+                <aside className="min-w-0 space-y-6 rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6 dark:border-neutral-800 dark:bg-neutral-900/50">
                   <h2 className="text-xl font-medium">Your order</h2>
                   {cart.items.map((item) => (
                     <div
                       key={item.variant_id}
                       className="flex justify-between gap-4 text-sm"
                     >
-                      <span>
+                      <span className="min-w-0 break-words">
                         {item.name} × {item.quantity}
                       </span>
-                      <span>{money(item.price_cents * item.quantity)}</span>
+                      <span className="shrink-0 tabular-nums">
+                        {money(item.price_cents * item.quantity)}
+                      </span>
                     </div>
                   ))}
                   <Totals value={cart} />
@@ -540,7 +555,7 @@ export function OrdersPage() {
                 <Link
                   href={`/account/orders/${order.id}`}
                   key={order.id}
-                  className="flex flex-wrap items-center justify-between gap-4 py-6"
+                  className="flex flex-wrap items-center justify-between gap-4 rounded-xl px-3 py-6 transition hover:bg-neutral-100 dark:hover:bg-neutral-900"
                 >
                   <div>
                     <p className="font-medium">Order {order.id.slice(0, 8)}</p>
@@ -558,10 +573,10 @@ export function OrdersPage() {
           )}
           <nav
             aria-label="Order pages"
-            className="mt-8 flex items-center gap-5"
+            className="mt-8 flex flex-wrap items-center justify-between gap-4 sm:justify-start sm:gap-5"
           >
             <button
-              className="underline disabled:opacity-40"
+              className="min-h-11 rounded-lg border border-neutral-300 px-4 text-sm disabled:opacity-40 dark:border-neutral-700"
               disabled={page === 1 || state.loading}
               onClick={() => setPage((value) => value - 1)}
             >
@@ -571,7 +586,7 @@ export function OrdersPage() {
               Page {page} of {Math.max(1, state.data.pagination.pages)}
             </span>
             <button
-              className="underline disabled:opacity-40"
+              className="min-h-11 rounded-lg border border-neutral-300 px-4 text-sm disabled:opacity-40 dark:border-neutral-700"
               disabled={page >= state.data.pagination.pages || state.loading}
               onClick={() => setPage((value) => value + 1)}
             >
@@ -597,8 +612,8 @@ export function OrderPage({ id }: { id: string }) {
       </Link>
       <LoadState {...state} retry={state.reload} />
       {order && (
-        <div className="mt-8 grid gap-10 md:grid-cols-[1fr_280px]">
-          <div>
+        <div className="mt-8 grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-12">
+          <div className="min-w-0">
             <p className="break-all text-sm text-neutral-500">
               Order {order.id}
             </p>
@@ -612,7 +627,10 @@ export function OrderPage({ id }: { id: string }) {
             </p>
             <div className="mt-8 divide-y divide-neutral-200 dark:divide-neutral-800">
               {order.items?.map((item, index) => (
-                <div key={index} className="flex gap-4 py-5">
+                <div
+                  key={index}
+                  className="grid grid-cols-[64px_minmax(0,1fr)] gap-4 py-5 sm:grid-cols-[64px_minmax(0,1fr)_auto]"
+                >
                   {item.image_url && (
                     <img
                       src={item.image_url}
@@ -620,8 +638,10 @@ export function OrderPage({ id }: { id: string }) {
                       className="h-24 w-16 rounded bg-white object-contain"
                     />
                   )}
-                  <div className="flex-1">
-                    <p className="font-medium">{item.name}</p>
+                  <div className="col-start-2 min-w-0">
+                    <p className="break-words font-medium leading-6">
+                      {item.name}
+                    </p>
                     <p className="mt-1 text-sm text-neutral-500">
                       {[item.size, item.color].filter(Boolean).join(" / ")}
                     </p>
@@ -630,18 +650,18 @@ export function OrderPage({ id }: { id: string }) {
                       {money(item.price_cents, order.currency)}
                     </p>
                   </div>
-                  <p className="text-sm">
+                  <p className="col-start-2 text-sm font-semibold tabular-nums sm:col-start-3">
                     {money(item.quantity * item.price_cents, order.currency)}
                   </p>
                 </div>
               ))}
             </div>
           </div>
-          <aside className="space-y-7">
+          <aside className="min-w-0 space-y-7 rounded-2xl border border-neutral-200 bg-white p-5 sm:p-6 dark:border-neutral-800 dark:bg-neutral-900/50">
             <Totals value={order} />
             <section>
               <h2 className="font-medium">Shipping address</h2>
-              <address className="mt-3 whitespace-pre-line text-sm not-italic leading-6 text-neutral-500">
+              <address className="mt-3 break-words whitespace-pre-line text-sm not-italic leading-6 text-neutral-600 dark:text-neutral-400">
                 {[
                   order.shipping_address.name,
                   order.shipping_address.line1,

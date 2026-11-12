@@ -26,6 +26,7 @@ from torchvision import transforms
 from transformers import AutoTokenizer
 
 from ai_worker.models.mrl import MRL_CrossModal_Model
+from ai_worker.indexing.search_documents import build_search_documents, write_search_documents, validate_search_documents
 
 LOCK_ID = 19860513
 ROOT = Path(os.environ.get('VECTOR_DB_DIR', '/data/vector_db')).resolve()
@@ -52,20 +53,23 @@ def preserve_source(db, source):
     """Archive legacy seed artifacts before publishing the first managed rebuild."""
     folder = managed(source['index_path'])
     meta = json.loads((folder / 'index_meta.json').read_text())
+    product_ids = json.loads((folder / 'product_ids.json').read_text())
+    search_documents = validate_search_documents(folder, meta, product_ids, meta['num_vectors'])
+    artifacts = ARTIFACTS + ([('search_documents.json', 'search_documents_sha256')] if search_documents is not None else [])
     if folder != ROOT:
         return folder, meta
     destination = ROOT / 'versions' / str(source['id'])
     if not destination.exists():
         building = ROOT / 'versions' / (str(source['id']) + '.archiving')
         building.mkdir(parents=True, exist_ok=True)
-        for filename, field in ARTIFACTS:
+        for filename, field in artifacts:
             if meta.get(field) and digest(folder / filename) != meta[field]:
                 raise RuntimeError(f'Source artifact hash mismatch: {filename}')
             shutil.copy2(folder / filename, building / filename)
         checkpoint = managed(meta['checkpoint_path'])
         shutil.copy2(checkpoint, building / 'checkpoint.pt')
         meta['checkpoint_path'] = str(destination / 'checkpoint.pt')
-        for filename, field in ARTIFACTS:
+        for filename, field in artifacts:
             meta[field] = digest(building / filename)
         (building / 'index_meta.json').write_text(json.dumps(meta, indent=2))
         building.rename(destination)
@@ -88,7 +92,9 @@ def rebuild(db, job):
     if not 1 <= limit <= 100000:
         raise RuntimeError('MAX_CATALOG_IMAGES must be between 1 and 100000')
     rows = db.execute("""SELECT p.id product_id,p.name,COALESCE(p.description,'') description,
-        COALESCE(p.brand,'') brand,p.search_revision,i.id image_id,i.object_key
+        COALESCE(p.brand,'') brand,COALESCE(p.category,'') category,
+        COALESCE(p.metadata->>'subcategory','') subcategory,p.tags,
+        p.search_revision,i.id image_id,i.object_key
         FROM products p JOIN product_images i ON i.product_id=p.id AND i.is_active
         WHERE p.is_active ORDER BY p.id,i.position,i.id LIMIT %s""", (limit + 1,)
     ).fetchall()
@@ -149,9 +155,10 @@ def rebuild(db, job):
     for filename, values in [('image_paths.json', paths), ('captions.json', captions), ('product_ids.json', ids)]:
         (building / filename).write_text(json.dumps(values))
     meta = dict(source_meta)
-    meta.update(index_version=version, checkpoint_path=str(destination / 'checkpoint.pt'), num_vectors=len(rows), num_products=len(set(ids)), dataset_name='AuraFind SQL catalog', dataset_split='catalog', image_root=str(IMAGES), built_at=datetime.now(timezone.utc).isoformat())
+    meta.update(index_version=version, checkpoint_path=str(destination / 'checkpoint.pt'), num_vectors=len(rows), num_products=len(set(ids)), dataset_name='AuraFind SQL catalog', dataset_split='catalog', image_root=str(IMAGES), built_at=datetime.now(timezone.utc).isoformat(), source_index_version=source_meta['index_version'], metadata_upgrade_only=False)
     for filename, field in ARTIFACTS:
         meta[field] = digest(building / filename)
+    meta.update(write_search_documents(building, build_search_documents(rows, ids)))
     (building / 'index_meta.json').write_text(json.dumps(meta, indent=2))
     building.rename(destination)
     # Files exist before SQL publication. Existing versions/mappings are never removed.

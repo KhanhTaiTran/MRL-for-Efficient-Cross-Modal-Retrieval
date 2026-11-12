@@ -2,7 +2,6 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "components/auth/auth-provider";
-import { StoreHeader } from "components/layout/store-header";
 import { authenticatedRequest } from "lib/api/client";
 import { money } from "lib/api/commerce";
 interface Saved {
@@ -50,9 +49,19 @@ export function WishlistPage() {
   const data = result?.owner === user?.id ? result : null;
   return (
     <>
-      <StoreHeader />
-      <main className="mx-auto max-w-5xl px-6 py-12">
-        <h1 className="text-3xl font-semibold">Your wishlist</h1>
+      <section className="mx-auto w-full max-w-[1440px] px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
+        <Link
+          href="/search"
+          className="mb-5 inline-flex min-h-8 items-center text-sm text-neutral-600 underline underline-offset-4 dark:text-neutral-400"
+        >
+          Continue shopping
+        </Link>
+        <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+          Saved items
+        </h1>
+        <p className="mt-3 text-sm leading-6 text-neutral-600 dark:text-neutral-400">
+          Keep your favourites together and return to them whenever you like.
+        </p>
         {loading ? (
           <p className="mt-8">Loading account…</p>
         ) : !user ? (
@@ -65,7 +74,7 @@ export function WishlistPage() {
         ) : (
           <>
             {error && (
-              <p role="alert" className="mt-6 text-red-600">
+              <p role="alert" className="mt-6 text-red-700 dark:text-red-400">
                 {error}
               </p>
             )}
@@ -75,9 +84,9 @@ export function WishlistPage() {
               </p>
             ) : (
               <>
-                <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="mt-8 grid grid-cols-2 gap-x-4 gap-y-8 sm:gap-x-6 md:grid-cols-3 xl:grid-cols-4">
                   {data.data.map((item) => (
-                    <article key={item.id}>
+                    <article key={item.id} className="min-w-0">
                       {item.image_url && (
                         <img
                           src={item.image_url}
@@ -87,16 +96,16 @@ export function WishlistPage() {
                       )}
                       <Link
                         href={`/product/${item.handle}`}
-                        className="mt-4 block font-medium"
+                        className="mt-4 block break-words text-sm font-medium leading-6 hover:underline sm:text-base"
                       >
                         {item.name}
                       </Link>
-                      <p className="mt-2 text-sm">
+                      <p className="mt-2 text-sm font-semibold tabular-nums">
                         {money(item.price_cents, item.currency)}
                       </p>
                       <button
                         disabled={busy}
-                        className="mt-3 text-sm underline"
+                        className="mt-2 min-h-11 text-left text-xs text-neutral-600 underline underline-offset-4 disabled:opacity-50 sm:text-sm dark:text-neutral-400"
                         onClick={async () => {
                           setBusy(true);
                           setError("");
@@ -131,11 +140,11 @@ export function WishlistPage() {
                 )}
                 <nav
                   aria-label="Wishlist pages"
-                  className="mt-8 flex gap-5 text-sm"
+                  className="mt-10 flex flex-wrap items-center justify-between gap-4 text-sm sm:justify-start sm:gap-5"
                 >
                   <button
                     disabled={page === 1 || busy}
-                    className="underline disabled:opacity-40"
+                    className="min-h-11 rounded-lg border border-neutral-300 px-4 disabled:opacity-40 dark:border-neutral-700"
                     onClick={() => setPage((v) => v - 1)}
                   >
                     Previous
@@ -145,7 +154,7 @@ export function WishlistPage() {
                   </span>
                   <button
                     disabled={page >= data.pages || busy}
-                    className="underline disabled:opacity-40"
+                    className="min-h-11 rounded-lg border border-neutral-300 px-4 disabled:opacity-40 dark:border-neutral-700"
                     onClick={() => setPage((v) => v + 1)}
                   >
                     Next
@@ -155,7 +164,7 @@ export function WishlistPage() {
             )}
           </>
         )}
-      </main>
+      </section>
     </>
   );
 }

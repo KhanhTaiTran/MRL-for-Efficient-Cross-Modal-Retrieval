@@ -17,6 +17,9 @@ try {
     Invoke-Compose cp "postgres:/tmp/$backupName" "tmp/$backupName"
     Invoke-Compose stop index-worker
     Invoke-Compose run --rm --no-deps seed
+    # Existing SQL catalogs need lexical artifacts too; the importer deliberately
+    # preserves their products and stock. This upgrade reuses existing vectors.
+    Invoke-Compose run --rm --no-deps index-worker python -m ai_worker.indexing.upgrade_hybrid
     # A checkpoint change requires a cold start, not same-model live reload.
     Invoke-Compose up -d --no-deps --force-recreate --wait --wait-timeout 240 ai-worker core-api frontend index-worker
     Invoke-Compose ps

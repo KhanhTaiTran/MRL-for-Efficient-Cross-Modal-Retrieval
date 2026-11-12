@@ -7,7 +7,8 @@ import unittest
 import faiss
 import numpy as np
 
-from import_fashiongen import ARTIFACTS, digest, prepare_source
+from import_fashiongen import ARTIFACTS, digest, prepare_source, identity
+from ai_worker.indexing.search_documents import build_search_documents, write_search_documents, validate_search_documents
 
 
 class SourceTests(unittest.TestCase):
@@ -54,6 +55,26 @@ class SourceTests(unittest.TestCase):
     def test_modified_checkpoint_is_rejected(self):
         (self.root / "model.pt").write_bytes(b"wrong weights")
         with self.assertRaisesRegex(ValueError, "checkpoint hash"):
+            self.prepare()
+
+    def test_hybrid_source_is_verified_and_remapped_for_catalog(self):
+        rows = self.prepare()[4]
+        self.meta.update(write_search_documents(self.root, build_search_documents(rows, ["123"])))
+        self.write_meta()
+        self.prepare()
+        catalog_ids = [identity("product", "123")]
+        mapped = build_search_documents(rows, catalog_ids)
+        metadata = write_search_documents(self.root, mapped)
+        result = validate_search_documents(self.root, metadata, catalog_ids, 1)
+        self.assertEqual(result["documents"][0]["product_id"], catalog_ids[0])
+        self.assertNotEqual(result["documents"][0]["product_id"], "123")
+
+    def test_declared_corrupt_hybrid_source_is_rejected(self):
+        rows = self.prepare()[4]
+        self.meta.update(write_search_documents(self.root, build_search_documents(rows, ["123"])))
+        self.write_meta()
+        (self.root / "search_documents.json").write_text("{}")
+        with self.assertRaisesRegex(ValueError, "checksum mismatch"):
             self.prepare()
 
 

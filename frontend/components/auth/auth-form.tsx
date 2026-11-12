@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { clearSession, request, type Session } from "lib/api/client";
 import { useAuth } from "./auth-provider";
-import { StoreHeader } from "components/layout/store-header";
 
 export type AuthMode =
   | "login"
@@ -37,7 +36,7 @@ const copy = {
   ],
 };
 const inputClass =
-  "mt-2 w-full rounded-xl border border-neutral-300 bg-transparent px-4 py-3 text-base outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-400/30 dark:border-neutral-700";
+  "mt-2 min-h-12 w-full rounded-xl border border-neutral-300 bg-white px-4 py-3 text-base text-neutral-900 outline-none focus:border-neutral-700 focus:ring-2 focus:ring-neutral-400/30 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100";
 
 export function AuthForm({ mode }: { mode: AuthMode }) {
   const router = useRouter();
@@ -116,161 +115,175 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
 
   return (
     <>
-      <StoreHeader />
-      <div className="mx-auto w-full max-w-md px-6 py-14 sm:py-20">
-        <h1 className="text-3xl font-semibold tracking-tight">{title}</h1>
-        <p className="mt-3 text-sm leading-6 text-neutral-500">{subtitle}</p>
-        {params.get("reset") === "success" && (
-          <p
-            role="status"
-            className="mt-5 text-sm text-green-700 dark:text-green-400"
+      <section className="mx-auto w-full max-w-lg px-4 py-8 sm:px-6 sm:py-14">
+        <div className="rounded-2xl border border-neutral-200 bg-white p-5 sm:p-8 dark:border-neutral-800 dark:bg-neutral-900/40">
+          <Link
+            href="/search"
+            className="mb-6 inline-flex min-h-8 items-center text-sm text-neutral-600 underline underline-offset-4 dark:text-neutral-400"
           >
-            Password updated. Sign in with your new password.
+            Back to shopping
+          </Link>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+            {title}
+          </h1>
+          <p className="mt-3 text-sm leading-6 text-neutral-600 dark:text-neutral-400">
+            {subtitle}
           </p>
-        )}
-        <form onSubmit={submit} className="mt-8 space-y-5">
-          {mode === "register" && (
-            <label className="block text-sm font-medium">
-              Name
-              <input
-                name="name"
-                autoComplete="name"
-                required
-                maxLength={120}
-                className={inputClass}
-              />
-            </label>
-          )}
-          <label className="block text-sm font-medium">
-            Email
-            <input
-              name="email"
-              type="email"
-              autoComplete="email"
-              required
-              maxLength={254}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className={inputClass}
-            />
-          </label>
-          {hasCode && (
-            <label className="block text-sm font-medium">
-              Verification code
-              <input
-                name="code"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                pattern="[0-9]{6}"
-                minLength={6}
-                maxLength={6}
-                required
-                className={inputClass}
-              />
-            </label>
-          )}
-          {hasPassword && (
-            <label className="block text-sm font-medium">
-              {mode === "reset-password" ? "New password" : "Password"}
-              <input
-                name="password"
-                type="password"
-                autoComplete={
-                  mode === "login" ? "current-password" : "new-password"
-                }
-                minLength={mode === "login" ? undefined : 12}
-                maxLength={72}
-                required
-                className={inputClass}
-              />
-              {mode !== "login" && (
-                <span className="mt-2 block text-xs text-neutral-500">
-                  Use at least 12 characters.
-                </span>
-              )}
-            </label>
-          )}
-          {error && (
-            <p role="alert" className="text-sm text-red-600 dark:text-red-400">
-              {error}
-            </p>
-          )}
-          {message && (
-            <p role="status" className="text-sm text-neutral-500">
-              {message}
-            </p>
-          )}
-          <button
-            type="submit"
-            disabled={busy}
-            className="w-full rounded-xl bg-neutral-900 px-4 py-3.5 text-sm font-semibold text-white disabled:opacity-50 dark:bg-white dark:text-neutral-900"
-          >
-            {busy ? "Please wait…" : button}
-          </button>
-        </form>
-        <div className="mt-6 space-y-4 text-sm text-neutral-500">
-          {mode === "login" && (
-            <>
-              <p>
-                <Link
-                  className="underline underline-offset-4"
-                  href="/forgot-password"
-                >
-                  Forgot password?
-                </Link>
-              </p>
-              <p>
-                New here?{" "}
-                <Link
-                  className="text-neutral-900 underline underline-offset-4 dark:text-white"
-                  href={`/register${nextQuery ? `?${nextQuery}` : ""}`}
-                >
-                  Create an account
-                </Link>
-              </p>
-              <p>
-                <Link
-                  className="underline underline-offset-4"
-                  href={`/verify-email?email=${encodeURIComponent(email)}${nextQuery ? `&${nextQuery}` : ""}`}
-                >
-                  Verify your email
-                </Link>
-              </p>
-            </>
-          )}
-          {mode === "register" && (
-            <p>
-              Already have an account?{" "}
-              <Link
-                href={`/login${nextQuery ? `?${nextQuery}` : ""}`}
-                className="underline underline-offset-4"
-              >
-                Sign in
-              </Link>
-            </p>
-          )}
-          {mode === "verify-email" && (
-            <button
-              type="button"
-              disabled={busy || !email}
-              onClick={resend}
-              className="underline underline-offset-4 disabled:opacity-50"
+          {params.get("reset") === "success" && (
+            <p
+              role="status"
+              className="mt-5 text-sm text-green-700 dark:text-green-400"
             >
-              Send another code
-            </button>
-          )}
-          {mode !== "login" && mode !== "register" && (
-            <p>
-              <Link
-                href={`/login${nextQuery ? `?${nextQuery}` : ""}`}
-                className="underline underline-offset-4"
-              >
-                Back to sign in
-              </Link>
+              Password updated. Sign in with your new password.
             </p>
           )}
+          <form onSubmit={submit} className="mt-8 space-y-5">
+            {mode === "register" && (
+              <label className="block text-sm font-medium">
+                Name
+                <input
+                  name="name"
+                  autoComplete="name"
+                  required
+                  maxLength={120}
+                  className={inputClass}
+                />
+              </label>
+            )}
+            <label className="block text-sm font-medium">
+              Email
+              <input
+                name="email"
+                type="email"
+                autoComplete="email"
+                required
+                maxLength={254}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className={inputClass}
+              />
+            </label>
+            {hasCode && (
+              <label className="block text-sm font-medium">
+                Verification code
+                <input
+                  name="code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  pattern="[0-9]{6}"
+                  minLength={6}
+                  maxLength={6}
+                  required
+                  className={inputClass}
+                />
+              </label>
+            )}
+            {hasPassword && (
+              <label className="block text-sm font-medium">
+                {mode === "reset-password" ? "New password" : "Password"}
+                <input
+                  name="password"
+                  type="password"
+                  autoComplete={
+                    mode === "login" ? "current-password" : "new-password"
+                  }
+                  minLength={mode === "login" ? undefined : 12}
+                  maxLength={72}
+                  required
+                  className={inputClass}
+                />
+                {mode !== "login" && (
+                  <span className="mt-2 block text-xs text-neutral-500">
+                    Use at least 12 characters.
+                  </span>
+                )}
+              </label>
+            )}
+            {error && (
+              <p
+                role="alert"
+                className="text-sm text-red-600 dark:text-red-400"
+              >
+                {error}
+              </p>
+            )}
+            {message && (
+              <p role="status" className="text-sm text-neutral-500">
+                {message}
+              </p>
+            )}
+            <button
+              type="submit"
+              disabled={busy}
+              className="min-h-12 w-full rounded-xl bg-neutral-900 px-4 py-3.5 text-sm font-semibold text-white transition hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
+            >
+              {busy ? "Please wait…" : button}
+            </button>
+          </form>
+          <div className="mt-6 space-y-4 text-sm text-neutral-500">
+            {mode === "login" && (
+              <>
+                <p>
+                  <Link
+                    className="underline underline-offset-4"
+                    href="/forgot-password"
+                  >
+                    Forgot password?
+                  </Link>
+                </p>
+                <p>
+                  New here?{" "}
+                  <Link
+                    className="text-neutral-900 underline underline-offset-4 dark:text-white"
+                    href={`/register${nextQuery ? `?${nextQuery}` : ""}`}
+                  >
+                    Create an account
+                  </Link>
+                </p>
+                <p>
+                  <Link
+                    className="underline underline-offset-4"
+                    href={`/verify-email?email=${encodeURIComponent(email)}${nextQuery ? `&${nextQuery}` : ""}`}
+                  >
+                    Verify your email
+                  </Link>
+                </p>
+              </>
+            )}
+            {mode === "register" && (
+              <p>
+                Already have an account?{" "}
+                <Link
+                  href={`/login${nextQuery ? `?${nextQuery}` : ""}`}
+                  className="underline underline-offset-4"
+                >
+                  Sign in
+                </Link>
+              </p>
+            )}
+            {mode === "verify-email" && (
+              <button
+                type="button"
+                disabled={busy || !email}
+                onClick={resend}
+                className="min-h-11 underline underline-offset-4 disabled:opacity-50"
+              >
+                Send another code
+              </button>
+            )}
+            {mode !== "login" && mode !== "register" && (
+              <p>
+                <Link
+                  href={`/login${nextQuery ? `?${nextQuery}` : ""}`}
+                  className="underline underline-offset-4"
+                >
+                  Back to sign in
+                </Link>
+              </p>
+            )}
+          </div>
         </div>
-      </div>
+      </section>
     </>
   );
 }

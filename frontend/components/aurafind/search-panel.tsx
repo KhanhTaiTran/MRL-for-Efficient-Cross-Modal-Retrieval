@@ -45,6 +45,7 @@ export function SearchPanel({
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
         e.preventDefault();
+        if (isLoading) return;
         const file = e.dataTransfer.files?.[0];
         if (file?.type.startsWith("image/")) {
           onDropImage(file);
@@ -87,6 +88,7 @@ export function SearchPanel({
             <button
               type="button"
               onClick={onClearImage}
+              disabled={isLoading}
               className="rounded-full p-1.5 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-white"
               aria-label="Clear image"
             >
@@ -128,10 +130,11 @@ export function SearchPanel({
                   onTextSearch();
                 }
               }}
+              aria-label="Search fashion by description"
               placeholder={
                 compact
-                  ? "Describe your style or drop an image..."
-                  : "Describe your style (e.g., A red summer dress) or drop an image..."
+                  ? "Describe a look…"
+                  : "Describe a look, or add an image…"
               }
               disabled={isLoading}
               className={clsx(
@@ -160,7 +163,9 @@ export function SearchPanel({
                 <input
                   title="Upload an image"
                   type="file"
+                  disabled={isLoading}
                   accept="image/*"
+                  aria-label="Upload a reference image"
                   className="sr-only"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
@@ -168,6 +173,7 @@ export function SearchPanel({
                       onImageSelect(file);
                       onImageModeChange(true);
                     }
+                    e.target.value = "";
                   }}
                 />
               </label>

@@ -18,6 +18,7 @@
 /notes/
 # Generated retrieval data, local secrets and compiled services
 /ai-worker/vector_db/
+/ai-worker/vector_db.hybrid-*/
 /core-api/*.exe
 /.env
 /.env.local

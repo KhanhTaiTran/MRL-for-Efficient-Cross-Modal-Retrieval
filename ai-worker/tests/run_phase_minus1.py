@@ -11,8 +11,13 @@ if __name__ == '__main__':
     args=parser.parse_args()
     folder=WORKER_ROOT
     env={**os.environ,'HF_HUB_OFFLINE':'1','TRANSFORMERS_OFFLINE':'1','OMP_NUM_THREADS':'1','MKL_NUM_THREADS':'1'}
-    subprocess.run([sys.executable,'-u','-m','tests.test_readiness'],cwd=folder,env=env,check=True)
-    subprocess.run([sys.executable,'-u','-m','tests.test_index_reload'],cwd=folder,env=env,check=True)
-    subprocess.run([sys.executable,'-u','-m','tests.test_search_regression'],cwd=folder,env=env,check=True)
+    modules = [
+        'tests.test_hybrid', 'tests.test_hybrid_benchmark',
+        'tests.test_search_documents', 'tests.test_hybrid_index_upgrade',
+        'tests.test_catalog_hybrid_upgrade',
+        'tests.test_indexing_documents', 'tests.test_hybrid_api',
+        'tests.test_readiness', 'tests.test_index_reload', 'tests.test_search_regression',
+    ]
+    subprocess.run([sys.executable,'-u','-m','unittest',*modules,'-v'],cwd=folder,env=env,check=True)
     if args.e2e:
         subprocess.run([sys.executable,'-u','-m','tests.test_search_e2e'],cwd=folder,env=env,check=True)

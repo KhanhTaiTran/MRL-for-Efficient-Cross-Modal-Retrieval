@@ -15,7 +15,13 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 import shutil
+import sys
 from uuid import NAMESPACE_URL, uuid5
+
+source_root = Path(__file__).resolve().parents[2]
+worker_root = source_root / 'ai-worker' if (source_root / 'ai-worker' / 'ai_worker').is_dir() else source_root
+sys.path.insert(0, str(worker_root))
+from ai_worker.indexing.search_documents import build_search_documents, write_search_documents, validate_search_documents
 
 import faiss
 from minio import Minio
@@ -78,6 +84,7 @@ def prepare_source(root=Path("/source/index"), dataset=Path("/source/dataset"), 
         raise ValueError("Duplicate source image paths")
     if len(set(map(source_id, ids))) != meta["num_products"]:
         raise ValueError("Source product count differs from manifest")
+    validate_search_documents(root, meta, ids, meta["num_vectors"])
     for n, (row, filename, caption, pid) in enumerate(zip(rows, paths, captions, ids)):
         if Path(filename).name != filename or Path(row["image_path"].replace("\\", "/")).name != filename:
             raise ValueError("Source image order/path mismatch")
@@ -108,7 +115,7 @@ def main():
             return
         if db.execute("SELECT EXISTS(SELECT 1 FROM products WHERE metadata->>'source_dataset'='FashionGen')").fetchone()[0]:
             raise RuntimeError("FashionGen products already exist with a different active source; inspect before importing")
-        version = identity("version", source_meta["checkpoint_sha256"] + source_meta["image_index_sha256"] + source_meta["source_csv_sha256"])
+        version = identity("version", "hybrid-v1:" + source_meta["checkpoint_sha256"] + source_meta["image_index_sha256"] + source_meta["source_csv_sha256"])
         output = Path(os.environ.get("VECTOR_DB_DIR", "/data/vector_db")) / "versions" / version
         building = output.with_name(version + ".importing")
         building.mkdir(parents=True, exist_ok=True)
@@ -149,12 +156,17 @@ def main():
             (building / "product_ids.json").write_text(json.dumps(catalog_ids))
             meta = dict(source_meta)
             meta.update(index_version=version, checkpoint_path=str(output / "checkpoint.pt"), checkpoint_sha256=digest(building / "checkpoint.pt"), source_checkpoint_sha256=source_meta["checkpoint_sha256"], source_index_version=source_meta["index_version"], catalog_source="FashionGen", dataset_split="catalog", source_dataset_split="val", image_root=str(image_root), model_kind="trained-mrl", commerce_data_kind="simulated", commerce_data_note=DATA_NOTE, built_at=datetime.now(timezone.utc).isoformat(), product_ids_sha256=digest(building / "product_ids.json"))
+            # Rebuild documents from verified rows with catalog UUIDs. Source
+            # numeric IDs must never leak into the SQL serving snapshot.
+            meta.update(write_search_documents(building, build_search_documents(rows, catalog_ids)))
             (building / "index_meta.json").write_text(json.dumps(meta, indent=2))
             building.rename(output)
         meta = json.loads((output / "index_meta.json").read_text())
         for name, field in {**ARTIFACTS, "product_ids.json": "product_ids_sha256", "checkpoint.pt": "checkpoint_sha256"}.items():
             if digest(output / name) != meta[field]:
                 raise ValueError(f"Staged artifact hash mismatch: {name}")
+        catalog_ids = json.loads((output / "product_ids.json").read_text())
+        validate_search_documents(output, meta, catalog_ids, len(rows))
         products = {}
         for row in rows:
             products.setdefault(source_id(row["product_id"]), row)

@@ -105,6 +105,44 @@ func TestEnrichmentVersionIsolation(t *testing.T) {
 	if _, err = repo.Enrich(ctx, "unknown-version", input); !errors.Is(err, ErrIndexNotMapped) {
 		t.Fatalf("unmapped version accepted: %v", err)
 	}
+	// Structured catalog filters define eligibility independently of query text.
+	if _, err = db.Exec(ctx, "UPDATE products SET category='dress',is_featured=true WHERE id=$1", a); err != nil {
+		t.Fatal(err)
+	}
+	minPrice, maxPrice := float64(0), float64(10)
+	eligible, err := repo.EligibleProductIDs(ctx, Filter{Category: "dress", Featured: true, Min: &minPrice, Max: &maxPrice, Q: "this is not a SQL substring"})
+	if err != nil || len(eligible) != 1 || eligible[0] != a {
+		t.Fatalf("structured eligibility failed: %v %v", eligible, err)
+	}
+	if _, err = db.Exec(ctx, "UPDATE product_images SET is_active=false WHERE id=$1", aa); err != nil {
+		t.Fatal(err)
+	}
+	rank := .032
+	alternates := []models.EnrichedResult{{VectorID: 0, CatalogProductID: a, SimilarityScore: .9, RankScore: &rank, ImageCandidates: []models.ImageCandidate{{VectorID: 2, SimilarityScore: .99}, {VectorID: 0, SimilarityScore: .9}, {VectorID: 1, SimilarityScore: .8}}}}
+	active, err := repo.Enrich(ctx, versionA, alternates)
+	if err != nil || len(active) != 1 || active[0].VectorID != 1 || active[0].SimilarityScore != .8 || active[0].ImageURL != "http://storage/products/a/second.png" || active[0].RankScore == nil || *active[0].RankScore != rank {
+		t.Fatalf("retired image fallback, product identity or scores lost: %+v %v", active, err)
+	}
+	// A forged higher-scoring alternate from another product cannot replace A.
+	if active[0].CatalogProductID != a {
+		t.Fatal("alternate escaped product identity")
+	}
+	forged, err := repo.Enrich(ctx, versionA, []models.EnrichedResult{{VectorID: 2, CatalogProductID: a, ImageCandidates: []models.ImageCandidate{{VectorID: 1, SimilarityScore: .9}}}})
+	if err != nil || len(forged) != 0 {
+		t.Fatalf("claimed product overrode authoritative main mapping: %+v %v", forged, err)
+	}
+	withB, err := repo.Enrich(ctx, versionA, []models.EnrichedResult{{VectorID: 1, SimilarityScore: .8}, {VectorID: 2, SimilarityScore: .7}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ordered, err := repo.SearchProducts(ctx, withB, Filter{Q: "no substring", Sort: "price_desc", Page: 2, Limit: 1})
+	if err != nil || len(ordered) != 2 || ordered[0].ID != b || ordered[1].ID != a || ordered[1].ImageURL != "http://storage/products/a/second.png" {
+		t.Fatalf("whole pool sorting/hydration failed: %+v %v", ordered, err)
+	}
+	ordered, err = repo.SearchProducts(ctx, withB, Filter{Sort: "relevance", Category: "dress", Featured: true, Max: &maxPrice})
+	if err != nil || len(ordered) != 1 || ordered[0].ID != a {
+		t.Fatalf("final structured filter check failed: %+v %v", ordered, err)
+	}
 	if _, err = db.Exec(ctx, "UPDATE products SET is_active=false WHERE id=$1", b); err != nil {
 		t.Fatal(err)
 	}

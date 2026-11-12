@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"path"
+	"sort"
 	"strings"
 
 	"core-api/internal/models"
@@ -33,6 +35,8 @@ type Product struct {
 	DefaultVariantID string    `json:"default_variant_id"`
 	Images           []Image   `json:"images,omitempty"`
 	Variants         []Variant `json:"variants,omitempty"`
+	SimilarityScore  *float64  `json:"similarity_score,omitempty"`
+	RankScore        *float64  `json:"rank_score,omitempty"`
 }
 type Image struct {
 	ID      string `json:"id"`
@@ -178,23 +182,33 @@ func (r *Repository) Enrich(ctx context.Context, version string, results []model
 	ids := make([]int, 0, len(results))
 	for _, p := range results {
 		ids = append(ids, p.VectorID)
+		for _, alternate := range p.ImageCandidates {
+			ids = append(ids, alternate.VectorID)
+		}
 	}
-	rows, err := r.DB.Query(ctx, `SELECT m.vector_id,p.id::text,p.handle,p.name,COALESCE(p.brand,''),p.base_price::float8,p.currency,pi.object_key,COALESCE(rv.count,0)::int,rv.average
+	rows, err := r.DB.Query(ctx, `SELECT m.vector_id,p.id::text,p.handle,p.name,COALESCE(p.brand,''),p.base_price::float8,p.currency,pi.object_key,COALESCE(rv.count,0)::int,rv.average,p.is_active,pi.is_active
  FROM index_vector_mappings m JOIN product_images pi ON pi.id=m.product_image_id JOIN products p ON p.id=pi.product_id
  LEFT JOIN LATERAL (SELECT count(*) count,avg(rating)::float8 average FROM reviews WHERE product_id=p.id AND NOT is_hidden) rv ON true
- WHERE m.index_version_id=$1 AND m.vector_id=ANY($2::int[]) AND p.is_active AND pi.is_active`, id, ids)
+ WHERE m.index_version_id=$1 AND m.vector_id=ANY($2::int[])`, id, ids)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	matched := map[int]models.EnrichedResult{}
+	identities := map[int]string{}
 	for rows.Next() {
 		var p models.EnrichedResult
 		var key string
-		if err = rows.Scan(&p.VectorID, &p.CatalogProductID, &p.Handle, &p.Name, &p.Brand, &p.Price, &p.Currency, &key, &p.ReviewCount, &p.RatingAverage); err != nil {
+		var productActive, imageActive bool
+		if err = rows.Scan(&p.VectorID, &p.CatalogProductID, &p.Handle, &p.Name, &p.Brand, &p.Price, &p.Currency, &key, &p.ReviewCount, &p.RatingAverage, &productActive, &imageActive); err != nil {
 			return nil, err
 		}
+		identities[p.VectorID] = p.CatalogProductID
+		if !productActive || !imageActive {
+			continue
+		}
 		p.ImageURL = r.ImageURL(key)
+		p.ProductID = path.Base(key)
 		matched[p.VectorID] = p
 	}
 	if err = rows.Err(); err != nil {
@@ -204,15 +218,100 @@ func (r *Repository) Enrich(ctx context.Context, version string, results []model
 	enriched := []models.EnrichedResult{}
 	seen := map[string]bool{}
 	for _, original := range results {
-		p, ok := matched[original.VectorID]
-		if !ok || seen[p.CatalogProductID] {
+		authoritativeID := identities[original.VectorID]
+		if len(original.ImageCandidates) > 0 && (authoritativeID == "" || original.CatalogProductID != authoritativeID) {
+			continue
+		}
+		candidates := append([]models.ImageCandidate(nil), original.ImageCandidates...)
+		if len(candidates) == 0 {
+			candidates = []models.ImageCandidate{{VectorID: original.VectorID, SimilarityScore: original.SimilarityScore}}
+		}
+		sort.SliceStable(candidates, func(i, j int) bool { return candidates[i].SimilarityScore > candidates[j].SimilarityScore })
+		var p models.EnrichedResult
+		found := false
+		for _, candidate := range candidates {
+			mapped, ok := matched[candidate.VectorID]
+			if !ok {
+				continue
+			}
+			// Alternate views must belong to the product identified by the main vector.
+			if len(original.ImageCandidates) > 0 && mapped.CatalogProductID != authoritativeID {
+				continue
+			}
+			p = mapped
+			p.SimilarityScore = candidate.SimilarityScore
+			found = true
+			break
+		}
+		if !found || seen[p.CatalogProductID] {
 			continue
 		}
 		seen[p.CatalogProductID] = true
-		p.ProductID = original.ProductID
+		if p.VectorID == original.VectorID {
+			p.ProductID = original.ProductID
+		}
 		p.Caption = original.Caption
-		p.SimilarityScore = original.SimilarityScore
+		p.RankScore = original.RankScore
 		enriched = append(enriched, p)
 	}
 	return enriched, nil
+}
+
+// Eligibility is applied before either retriever takes a bounded candidate set.
+// Query text deliberately does not participate in this catalog filter.
+const searchEligibility = `p.is_active AND ($1='' OR p.category=$1) AND (NOT $2::boolean OR p.is_featured) AND ($3::numeric IS NULL OR p.base_price >= $3) AND ($4::numeric IS NULL OR p.base_price <= $4) AND EXISTS (SELECT 1 FROM product_images e WHERE e.product_id=p.id AND e.is_active)`
+
+func searchFilterArgs(f Filter) []any { return []any{f.Category, f.Featured, f.Min, f.Max} }
+
+func (r *Repository) EligibleProductIDs(ctx context.Context, f Filter) ([]string, error) {
+	rows, err := r.DB.Query(ctx, "SELECT p.id::text FROM products p WHERE "+searchEligibility+" ORDER BY p.id", searchFilterArgs(f)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// SearchProducts hydrates and orders the complete retrieved pool before paging.
+func (r *Repository) SearchProducts(ctx context.Context, results []models.EnrichedResult, f Filter) ([]Product, error) {
+	products := []Product{}
+	if len(results) == 0 {
+		return products, nil
+	}
+	ids := make([]string, 0, len(results))
+	byID := make(map[string]models.EnrichedResult, len(results))
+	for _, result := range results {
+		ids = append(ids, result.CatalogProductID)
+		byID[result.CatalogProductID] = result
+	}
+	order := map[string]string{"newest": "p.created_at DESC,p.id", "price_asc": "p.base_price,p.id", "price_desc": "p.base_price DESC,p.id", "name": "p.name,p.id"}[f.Sort]
+	if order == "" {
+		order = "array_position($5::uuid[],p.id)"
+	}
+	args := append(searchFilterArgs(f), ids)
+	rows, err := r.DB.Query(ctx, "SELECT "+fields+" FROM products p"+joins+" WHERE "+searchEligibility+" AND p.id=ANY($5::uuid[]) ORDER BY "+order, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		p, err := r.scan(rows)
+		if err != nil {
+			return nil, err
+		}
+		candidate := byID[p.ID]
+		p.ImageURL = candidate.ImageURL
+		p.SimilarityScore = &candidate.SimilarityScore
+		p.RankScore = candidate.RankScore
+		products = append(products, p)
+	}
+	return products, rows.Err()
 }

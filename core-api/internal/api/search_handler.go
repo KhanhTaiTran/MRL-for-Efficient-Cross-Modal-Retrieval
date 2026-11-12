@@ -5,21 +5,30 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"core-api/internal/broker"
 	"core-api/internal/catalog"
 	"core-api/internal/models"
+	searchservice "core-api/internal/search"
 	"github.com/gin-gonic/gin"
 )
 
 type SearchHandler struct {
 	inferClient *broker.InferClient
 	catalog     *catalog.Repository
+	search      *searchservice.Service
 }
 
 func (h *SearchHandler) WithCatalog(repo *catalog.Repository) *SearchHandler {
 	h.catalog = repo
+	h.search.WithCatalog(repo)
+	return h
+}
+
+func (h *SearchHandler) WithSearchService(service *searchservice.Service) *SearchHandler {
+	h.search = service
 	return h
 }
 
@@ -40,7 +49,7 @@ func (h *SearchHandler) respond(c *gin.Context, infer *broker.InferResponse, dim
 }
 
 func NewSearchHandler(inferClient *broker.InferClient) *SearchHandler {
-	return &SearchHandler{inferClient: inferClient}
+	return &SearchHandler{inferClient: inferClient, search: searchservice.NewService(inferClient, nil)}
 }
 
 // RegisterRoutes registers search endpoints onto the given router group.
@@ -53,7 +62,7 @@ func (h *SearchHandler) RegisterRoutes(rg *gin.RouterGroup) {
 func (h *SearchHandler) SearchByText(c *gin.Context) {
 	requestStart := time.Now()
 
-	query := c.PostForm("query")
+	query := strings.TrimSpace(c.PostForm("query"))
 	if query == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Please provide a search text with key 'query'"})
 		return
@@ -62,6 +71,24 @@ func (h *SearchHandler) SearchByText(c *gin.Context) {
 	cfg, err := parseSearchConfig(c)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if cfg.RetrievalMode == "hybrid" {
+		started := time.Now()
+		infer, items, err := h.search.Candidates(c.Request.Context(), query, cfg, catalog.Filter{})
+		if err != nil {
+			c.JSON(broker.ErrorStatus(err), gin.H{"error": "Search service error: " + err.Error()})
+			return
+		}
+		elapsed := time.Since(started) - time.Duration(infer.CatalogMs*float64(time.Millisecond))
+		response := buildSearchResponse(infer, cfg.MRLDimension, elapsed, requestStart)
+		if len(items) > 10 {
+			items = items[:10]
+		}
+		response.Data = items
+		response.Timing.EnrichMs = roundMs(infer.CatalogMs)
+		response.Timing.RequestTotalMs = roundMs(time.Since(requestStart).Seconds() * 1000)
+		c.JSON(http.StatusOK, response)
 		return
 	}
 
@@ -142,10 +169,18 @@ func parseSearchConfig(c *gin.Context) (broker.SearchConfig, error) {
 	if mode != "direct" && mode != "adaptive" {
 		return broker.SearchConfig{}, fmt.Errorf("invalid search_mode")
 	}
+	retrievalMode := c.PostForm("retrieval_mode")
+	if retrievalMode == "" {
+		retrievalMode = c.DefaultQuery("retrieval_mode", "dense")
+	}
+	if retrievalMode != "dense" && retrievalMode != "hybrid" {
+		return broker.SearchConfig{}, fmt.Errorf("invalid retrieval_mode")
+	}
 
 	return broker.SearchConfig{
-		MRLDimension: dim,
-		SearchMode:   mode,
+		MRLDimension:  dim,
+		SearchMode:    mode,
+		RetrievalMode: retrievalMode,
 	}, nil
 }
 
@@ -161,6 +196,8 @@ func buildSearchResponse(
 			VectorID:         item.VectorID,
 			CatalogProductID: item.CatalogProductID,
 			SimilarityScore:  item.SimilarityScore,
+			RankScore:        item.RankScore,
+			ImageCandidates:  item.ImageCandidates,
 			Caption:          item.Caption,
 			// Keep the indexed filename for the native FashionGen image route.
 			ProductID: item.ProductID,
@@ -183,13 +220,18 @@ func buildSearchResponse(
 		Status:       "success",
 		IndexVersion: infer.IndexVersion,
 		MRLDimension: mrlDimension,
+		Truncated:    infer.Truncated,
 		Data:         data,
 		SearchConfig: models.SearchConfigResp{
-			RequestedDim: infer.SearchConfig.RequestedDim,
-			SearchMode:   infer.SearchConfig.SearchMode,
-			Stage1Dim:    infer.SearchConfig.Stage1Dim,
-			Stage2Dim:    stage2Dim,
-			AQEEnabled:   infer.SearchConfig.AQEEnabled,
+			RequestedDim:           infer.SearchConfig.RequestedDim,
+			SearchMode:             infer.SearchConfig.SearchMode,
+			Stage1Dim:              infer.SearchConfig.Stage1Dim,
+			Stage2Dim:              stage2Dim,
+			AQEEnabled:             infer.SearchConfig.AQEEnabled,
+			RetrievalMode:          infer.SearchConfig.RetrievalMode,
+			EffectiveRetrievalMode: infer.SearchConfig.EffectiveRetrievalMode,
+			LexicalAvailable:       infer.SearchConfig.LexicalAvailable,
+			FallbackReason:         infer.SearchConfig.FallbackReason,
 		},
 		Timing: models.SearchTimingResp{
 			EncodeMs:       infer.Timing.EncodeMs,

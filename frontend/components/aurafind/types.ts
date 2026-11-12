@@ -14,6 +14,7 @@ export interface SearchResultItem {
   rating_average?: number | null;
   review_count?: number;
   similarity_score?: number;
+  rank_score?: number;
   distance?: number;
 }
 
@@ -23,6 +24,10 @@ export interface SearchConfig {
   stage1_dim: number;
   stage2_dim: number | null;
   aqe_enabled: boolean;
+  retrieval_mode?: "dense" | "hybrid";
+  effective_retrieval_mode?: "dense" | "hybrid";
+  lexical_available?: boolean;
+  fallback_reason?: string | null;
 }
 
 export interface SearchTiming {
@@ -30,6 +35,8 @@ export interface SearchTiming {
   aqe_ms: number;
   stage1_ms: number;
   rerank_ms: number;
+  lexical_ms?: number;
+  fusion_ms?: number;
   worker_total_ms: number;
   http_overhead_ms?: number;
   request_total_ms?: number;
@@ -38,6 +45,7 @@ export interface SearchTiming {
 export interface SearchResponse {
   status: string;
   index_version?: string;
+  truncated?: boolean;
   mrl_dimension: number;
   search_latency_ms?: number;
   data: SearchResultItem[];

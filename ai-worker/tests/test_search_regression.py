@@ -27,7 +27,8 @@ class PhaseMinusOne(unittest.TestCase):
         p=self.client.post('/infer/search/text',data={'query':'red dress','mrl_dimension':256,'search_mode':'adaptive'}).json()
         self.assertEqual(p['search_config']['stage1_dim'],64)
         self.assertEqual(p['search_config']['stage2_dim'],512)
-        self.assertTrue(p['search_config']['aqe_enabled'])
+        self.assertFalse(p['search_config']['aqe_enabled'])
+        self.assertEqual(p['timing']['aqe_ms'],0)
         self.assertGreater(p['timing']['worker_total_ms'],0)
     def test_image_modes(self):
         b=io.BytesIO(); Image.new('RGB',(224,224),'red').save(b,format='PNG')

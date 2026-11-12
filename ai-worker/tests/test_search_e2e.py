@@ -7,7 +7,9 @@ from ai_worker.paths import REPOSITORY_ROOT
 def main():
     root=REPOSITORY_ROOT
     worker=root/'ai-worker'; core=root/'core-api'
-    meta=json.loads((worker/'vector_db/index_meta.json').read_text())
+    vector_db=Path(os.environ.get('VECTOR_DB_DIR',str(worker/'vector_db')))
+    if not vector_db.is_absolute(): vector_db=worker/vector_db
+    meta=json.loads((vector_db/'index_meta.json').read_text())
     images=Path(os.environ.get('IMG_BASE_DIR',meta.get('image_root','')))
     if not images.is_dir(): raise ValueError('Missing IMG_BASE_DIR / index metadata image_root')
     env={**os.environ,'IMG_BASE_DIR':str(images),'HF_HUB_OFFLINE':'1','TRANSFORMERS_OFFLINE':'1','OMP_NUM_THREADS':'1','MKL_NUM_THREADS':'1'}
@@ -37,6 +39,9 @@ def main():
         else:raise TimeoutError('Startup timeout')
         assert cfg.json()['active_index_version'] == meta['index_version']
         assert cfg.json()['num_vectors'] == meta['num_vectors']
+        promoted=os.environ.get('HYBRID_SEARCH_ENABLED','1').lower() in ('1','true','yes')
+        expected_mode='hybrid' if promoted and cfg.json().get('lexical_available') else 'dense'
+        assert cfg.json()['text_retrieval_mode_default']==expected_mode
         print('ACTIVE DATASET:', cfg.json(),flush=True)
         def search(i):
             dim=[16,32,64,128,256,512][i%6]
@@ -45,13 +50,30 @@ def main():
             return p
         with ThreadPoolExecutor(max_workers=10) as pool:results=list(pool.map(search,range(10)))
         print('PASS: 10 concurrent real Go -> Python searches',flush=True)
+        for mode in ['direct','adaptive']:
+            response=requests.post(base+'/api/search/text',data={'query':'adidas','mrl_dimension':512,'search_mode':mode,'retrieval_mode':'hybrid'},timeout=30)
+            response.raise_for_status(); hybrid=response.json()
+            assert hybrid['search_config']['retrieval_mode']=='hybrid'
+            if cfg.json().get('lexical_available'):
+                assert hybrid['search_config']['effective_retrieval_mode']=='hybrid'
+                docs=json.loads((vector_db/'search_documents.json').read_text())['documents']
+                by_id={doc['product_id']:doc for doc in docs}
+                hits=hybrid['data']
+                assert len(hits)==10 and len({hit['catalog_product_id'] for hit in hits})==10
+                assert all(by_id[hit['catalog_product_id']]['brand'].casefold().startswith('adidas') for hit in hits)
+                assert all(-1<=hit['similarity_score']<=1 and hit.get('rank_score',0)>0 for hit in hits)
+                print('PASS: hybrid '+mode+' returns10 unique Adidas products with real cosine',flush=True)
+            else:
+                assert hybrid['search_config']['effective_retrieval_mode']=='dense'
+                assert hybrid['search_config']['fallback_reason']
+                print('PASS: legacy hybrid request reports dense fallback',mode,flush=True)
         name=results[0]['data'][0]['product_id']
         r=requests.get(base+'/images/'+name,timeout=5);assert r.status_code==200,(name,r.status_code)
         for mode in ['direct','adaptive']:
             with open(images/name,'rb') as f:r=requests.post(base+'/api/search/image',data={'mrl_dimension':512,'search_mode':mode},files={'image':(name,f,'image/jpeg')},timeout=30)
             r.raise_for_status(); assert r.json()['data'];print('PASS: image + Find Similar',mode,flush=True)
         # Verify index provenance numerically on one indexed image (raw vector, not ranking alone).
-        names=json.loads((worker/'vector_db/image_paths.json').read_text())
+        names=json.loads((vector_db/'image_paths.json').read_text())
         with open(images/names[0],'rb') as f:
             p=requests.post(base+'/api/search/image',data={'mrl_dimension':512,'search_mode':'direct'},files={'image':(names[0],f,'image/jpeg')},timeout=30).json()
         self_result=next((x for x in p['data'] if x['product_id']==names[0]),None)

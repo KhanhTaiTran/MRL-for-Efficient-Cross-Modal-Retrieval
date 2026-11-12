@@ -13,6 +13,14 @@ The project combines a Next.js storefront, a Go gateway and a Python CLIP/FAISS 
 
 The storefront uses English. MRL controls and timing are developer tools, not shopping UI.
 
+Legacy dense text search and image search use two-stage retrieval: 50 image candidates at 64D, then cosine reranking at 512D. Query expansion (AQE) is disabled for both text and image search.
+
+Storefront text search defaults to product-level hybrid with BM25 metadata matching,
+brand-family priority, RRF fusion, versioned lexical artifacts, and filtered
+catalog pagination. Legacy dense retrieval remains available. Storefront
+promotion passed the relevance gate and is controlled by `HYBRID_SEARCH_ENABLED`;
+see [hybrid search setup, contracts and evaluation](ai-worker/HYBRID_SEARCH.md).
+
 ## Real FashionGen demonstration
 
 Use the existing local FashionGen corpus and trained MRL checkpoint with
@@ -81,7 +89,7 @@ The full validation database (32,528 vectors, 7,519 product IDs) and trained che
 .\.venv\Scripts\python.exe ai-worker/manage.py test --e2e
 ```
 
-This path uses `ai-worker/vector_db/index_meta.json` to select the matching dataset/checkpoint. See the Phase -1 note for limitations and reproducibility checks. The latest checkpoint matches the currently cached FashionGen embeddings; best/latest cannot be swapped by merely changing metadata.
+This path uses `ai-worker/vector_db/index_meta.json` to select the matching dataset/checkpoint. Serving and index builds default to `mrl_fashiongen_best.pt`. On 6 November 2026, all 398 model tensors in best and latest were verified identical, and the cached FashionGen embeddings were checked against best before selecting it. Future checkpoint changes require matching, verified embeddings; changing a filename alone is insufficient. See the Phase -1 note for limitations and reproducibility checks.
 
 See [AI worker structure and commands](ai-worker/README.md) for API, training, extraction, benchmarks, scripts and tests. Configure FASHIONGEN_ROOT for your dataset. Earlier ViT-B/32 experiments and notebooks remain as research history, not production entry points.
 
