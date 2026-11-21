@@ -8,14 +8,22 @@ import {
   XMarkIcon,
 } from "@heroicons/react/24/outline";
 import Image from "next/image";
-import { useCallback, useRef, useState } from "react";
+import Link from "next/link";
+import { CatalogSourceNote } from "components/catalog/catalog-source-note";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-const MRL_DIMENSIONS = [8, 16, 32, 64, 128, 256, 512] as const;
+import { fetchSearchConfig } from "components/aurafind/search-api";
+import { API_BASE_URL } from "components/aurafind/types";
 
 interface SearchResult {
   product_id: string;
-  distance: number;
+  image_url?: string;
+  name?: string;
+  handle?: string;
+  distance?: number;
+  similarity_score?: number;
+  vector_id?: number;
 }
 
 interface SearchResponse {
@@ -25,6 +33,11 @@ interface SearchResponse {
   mrl_dimension?: number;
   search_latency_ms?: number;
   request_latency_ms?: number;
+  timing?: {
+    stage1_ms: number;
+    worker_total_ms: number;
+    request_total_ms: number;
+  };
 }
 
 interface ComparisonRow {
@@ -61,6 +74,16 @@ function ResultSkeleton() {
 }
 
 export default function ImageSearchPage() {
+  const [MRL_DIMENSIONS, setDimensions] = useState<number[]>([]);
+  useEffect(() => {
+    fetchSearchConfig()
+      .then((c) => {
+        setDimensions(c.supported_dims);
+        setMrlDimension(c.default_dim);
+      })
+      .catch(() => toast.error("Could not load search configuration"));
+  }, []);
+
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -137,8 +160,9 @@ export default function ImageSearchPage() {
     const formData = new FormData();
     formData.append("image", selectedFile);
     formData.append("mrl_dimension", String(dimension));
+    formData.append("search_mode", "direct");
 
-    const response = await fetch("http://localhost:8080/api/search", {
+    const response = await fetch(`${API_BASE_URL}/api/search/image`, {
       method: "POST",
       body: formData,
     });
@@ -163,8 +187,8 @@ export default function ImageSearchPage() {
       if (!data) return;
 
       setResults(data.data ?? []);
-      setSearchLatencyMs(data.search_latency_ms ?? null);
-      setRequestLatencyMs(data.request_latency_ms ?? null);
+      setSearchLatencyMs(data.timing?.stage1_ms ?? null);
+      setRequestLatencyMs(data.timing?.request_total_ms ?? null);
     } catch (error) {
       console.error("Error calling API:", error);
       toast.error(
@@ -196,15 +220,15 @@ export default function ImageSearchPage() {
 
         rows.push({
           dimension,
-          requestLatencyMs: data.request_latency_ms ?? 0,
-          searchLatencyMs: data.search_latency_ms ?? 0,
+          requestLatencyMs: data.timing?.request_total_ms ?? 0,
+          searchLatencyMs: data.timing?.stage1_ms ?? 0,
           topResult: data.data?.[0] ?? null,
         });
 
         if (dimension === mrlDimension) {
           setResults(data.data ?? []);
-          setSearchLatencyMs(data.search_latency_ms ?? null);
-          setRequestLatencyMs(data.request_latency_ms ?? null);
+          setSearchLatencyMs(data.timing?.stage1_ms ?? null);
+          setRequestLatencyMs(data.timing?.request_total_ms ?? null);
         }
       }
 
@@ -225,6 +249,7 @@ export default function ImageSearchPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:py-14 lg:px-6">
+      <CatalogSourceNote />
       {/* Header */}
       <div className="mb-10 text-center">
         <p className="text-xs font-medium uppercase tracking-wider text-violet-600 dark:text-violet-400">
@@ -379,20 +404,37 @@ export default function ImageSearchPage() {
                         <div className="relative aspect-square overflow-hidden bg-neutral-100 dark:bg-neutral-800">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
-                            src={`/mock_data/${item.product_id}`}
-                            alt={formatProductName(item.product_id)}
+                            src={
+                              item.image_url ||
+                              `${API_BASE_URL}/images/${encodeURIComponent(item.product_id)}`
+                            }
+                            alt={
+                              item.name || formatProductName(item.product_id)
+                            }
                             className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                           />
                           <span className="absolute right-2 top-2 rounded-full bg-violet-600 px-2.5 py-1 text-xs font-semibold tabular-nums text-white shadow-sm">
-                            d={item.distance.toFixed(4)}
+                            score=
+                            {(
+                              item.similarity_score ??
+                              item.distance ??
+                              0
+                            ).toFixed(4)}
                           </span>
                         </div>
                         <div className="p-4">
                           <h3 className="font-medium text-neutral-900 dark:text-white">
-                            {formatProductName(item.product_id)}
+                            {item.handle ? (
+                              <Link href={`/product/${item.handle}`}>
+                                {item.name ||
+                                  formatProductName(item.product_id)}
+                              </Link>
+                            ) : (
+                              item.name || formatProductName(item.product_id)
+                            )}
                           </h3>
                           <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">
-                            Similarity distance
+                            Similarity score
                           </p>
                         </div>
                       </article>
@@ -424,8 +466,8 @@ export default function ImageSearchPage() {
                   Dimension comparison
                 </h2>
                 <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-                  Lower distance means a closer match. Compare latency and match
-                  quality across supported dimensions.
+                  Higher cosine similarity means a closer match. Compare latency
+                  and match quality across supported dimensions.
                 </p>
               </div>
               <div className="overflow-x-auto">
@@ -436,7 +478,7 @@ export default function ImageSearchPage() {
                       <th className="px-5 py-3 font-medium">Request latency</th>
                       <th className="px-5 py-3 font-medium">FAISS latency</th>
                       <th className="px-5 py-3 font-medium">Top match</th>
-                      <th className="px-5 py-3 font-medium">Top distance</th>
+                      <th className="px-5 py-3 font-medium">Top similarity</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-neutral-200 dark:divide-neutral-800">
@@ -460,12 +502,17 @@ export default function ImageSearchPage() {
                         </td>
                         <td className="px-5 py-4 text-neutral-600 dark:text-neutral-300">
                           {row.topResult
-                            ? formatProductName(row.topResult.product_id)
+                            ? row.topResult.name ||
+                              formatProductName(row.topResult.product_id)
                             : "No result"}
                         </td>
                         <td className="px-5 py-4 tabular-nums text-neutral-600 dark:text-neutral-300">
                           {row.topResult
-                            ? row.topResult.distance.toFixed(4)
+                            ? (
+                                row.topResult.similarity_score ??
+                                row.topResult.distance ??
+                                0
+                              ).toFixed(4)
                             : "—"}
                         </td>
                       </tr>
@@ -559,7 +606,7 @@ export default function ImageSearchPage() {
                 <span className="font-semibold text-violet-600 dark:text-violet-400">
                   1.
                 </span>
-                ResNet-18 encodes the uploaded image
+                CLIP model encodes the uploaded image
               </li>
               <li className="flex gap-2">
                 <span className="font-semibold text-violet-600 dark:text-violet-400">

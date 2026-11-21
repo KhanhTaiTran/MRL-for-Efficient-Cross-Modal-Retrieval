@@ -1,27 +1,13 @@
-# ── Base image ───────────────────────────────────────────────────────────────
-FROM python:3.10-slim
-
-# Keeps Python from buffering stdout/stderr so logs appear in real-time
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
-
+FROM python:3.11-slim
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1
 WORKDIR /app
-
-# Install OS-level deps (gcc needed for some pika / torch wheels)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Cache pip layer separately from application code
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application source
-COPY . .
-
-# Create a non-root user
-RUN useradd -m -u 1001 appuser
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+RUN pip install torch==2.6.0 torchvision==0.21.0 --index-url https://download.pytorch.org/whl/cpu
+COPY ai-worker/requirements.txt ./requirements.txt
+RUN pip install -r requirements.txt
+COPY ai-worker/ ./
+COPY infra/ ./infra/
+RUN useradd -m -u 1001 appuser && mkdir -p /data/vector_db /data/huggingface /data/images && chown -R appuser:appuser /data
 USER appuser
-
-CMD ["python", "main.py"]
+EXPOSE 8001
+CMD ["uvicorn", "ai_worker.api.server:app", "--host", "0.0.0.0", "--port", "8001"]

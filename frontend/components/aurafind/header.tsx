@@ -16,8 +16,6 @@ type HeaderSearchProps = Pick<
   | "imageFileName"
   | "isImageMode"
   | "onImageModeChange"
-  | "mrlDimension"
-  | "onMrlDimensionChange"
   | "isLoading"
   | "searchFocused"
   | "onSearchFocusChange"

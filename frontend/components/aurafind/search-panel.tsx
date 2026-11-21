@@ -3,7 +3,6 @@
 import clsx from "clsx";
 import { AnimatePresence, motion } from "framer-motion";
 import { Camera, Loader2, Search, X } from "lucide-react";
-import { AiPrecisionSlider } from "./ai-precision-slider";
 
 export interface SearchPanelProps {
   query: string;
@@ -15,14 +14,10 @@ export interface SearchPanelProps {
   imageFileName: string | null;
   isImageMode: boolean;
   onImageModeChange: (imageMode: boolean) => void;
-  mrlDimension: number;
-  onMrlDimensionChange: (dimension: number) => void;
   isLoading: boolean;
   searchFocused: boolean;
   onSearchFocusChange: (focused: boolean) => void;
   onDropImage: (file: File) => void;
-  /** Always show the MRL slider (mobile main content) */
-  alwaysShowSlider?: boolean;
   /** Compact variant for tablet header */
   compact?: boolean;
   className?: string;
@@ -38,24 +33,19 @@ export function SearchPanel({
   imageFileName,
   isImageMode,
   onImageModeChange,
-  mrlDimension,
-  onMrlDimensionChange,
   isLoading,
   searchFocused,
   onSearchFocusChange,
   onDropImage,
-  alwaysShowSlider = false,
   compact = false,
   className,
 }: SearchPanelProps) {
-  const showSlider =
-    alwaysShowSlider || searchFocused || isImageMode || isLoading;
-
   return (
     <div
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
         e.preventDefault();
+        if (isLoading) return;
         const file = e.dataTransfer.files?.[0];
         if (file?.type.startsWith("image/")) {
           onDropImage(file);
@@ -98,6 +88,7 @@ export function SearchPanel({
             <button
               type="button"
               onClick={onClearImage}
+              disabled={isLoading}
               className="rounded-full p-1.5 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-white"
               aria-label="Clear image"
             >
@@ -139,15 +130,18 @@ export function SearchPanel({
                   onTextSearch();
                 }
               }}
+              aria-label="Search fashion by description"
               placeholder={
                 compact
-                  ? "Describe your style or drop an image..."
-                  : "Describe your style (e.g., A red summer dress) or drop an image..."
+                  ? "Describe a look…"
+                  : "Describe a look, or add an image…"
               }
               disabled={isLoading}
               className={clsx(
                 "w-full bg-transparent pl-3 text-neutral-900 placeholder:text-neutral-400 outline-none disabled:opacity-60 dark:text-white",
-                compact ? "py-2 pr-20 text-sm" : "py-2.5 pr-24 text-sm sm:text-base",
+                compact
+                  ? "py-2 pr-20 text-sm"
+                  : "py-2.5 pr-24 text-sm sm:text-base",
               )}
             />
             <div className="absolute right-1 flex items-center gap-1">
@@ -167,8 +161,11 @@ export function SearchPanel({
               <label className="flex h-9 w-9 cursor-pointer items-center justify-center rounded-xl text-neutral-600 transition-all hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white">
                 <Camera className="h-4 w-4" />
                 <input
+                  title="Upload an image"
                   type="file"
+                  disabled={isLoading}
                   accept="image/*"
+                  aria-label="Upload a reference image"
                   className="sr-only"
                   onChange={(e) => {
                     const file = e.target.files?.[0];
@@ -176,6 +173,7 @@ export function SearchPanel({
                       onImageSelect(file);
                       onImageModeChange(true);
                     }
+                    e.target.value = "";
                   }}
                 />
               </label>
@@ -183,13 +181,6 @@ export function SearchPanel({
           </motion.div>
         )}
       </AnimatePresence>
-
-      <AiPrecisionSlider
-        value={mrlDimension}
-        onChange={onMrlDimensionChange}
-        disabled={isLoading}
-        visible={showSlider}
-      />
     </div>
   );
 }

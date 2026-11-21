@@ -1,9 +1,9 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { MRL_DIMENSIONS } from "./types";
 
 interface AiPrecisionSliderProps {
+  dimensions: number[];
   value: number;
   onChange: (dimension: number) => void;
   disabled?: boolean;
@@ -11,15 +11,14 @@ interface AiPrecisionSliderProps {
 }
 
 export function AiPrecisionSlider({
+  dimensions,
   value,
   onChange,
   disabled,
   visible,
 }: AiPrecisionSliderProps) {
-  const index = MRL_DIMENSIONS.indexOf(
-    value as (typeof MRL_DIMENSIONS)[number],
-  );
-  const sliderIndex = index >= 0 ? index : MRL_DIMENSIONS.length - 1;
+  const index = dimensions.indexOf(value);
+  const sliderIndex = index >= 0 ? index : Math.max(0, dimensions.length - 1);
 
   return (
     <motion.div
@@ -49,20 +48,20 @@ export function AiPrecisionSlider({
           <input
             type="range"
             min={0}
-            max={MRL_DIMENSIONS.length - 1}
+            max={Math.max(0, dimensions.length - 1)}
             step={1}
             value={sliderIndex}
             disabled={disabled}
             onChange={(e) => {
               const nextIndex = Number(e.target.value);
-              onChange(MRL_DIMENSIONS[nextIndex] ?? value);
+              onChange(dimensions[nextIndex] ?? value);
             }}
             className="aurafind-slider h-1.5 w-full cursor-pointer appearance-none rounded-full bg-neutral-200 disabled:opacity-50 dark:bg-neutral-800"
             aria-label="AI Precision MRL Dimension"
           />
 
           <div className="mt-1 flex justify-between px-0.5">
-            {MRL_DIMENSIONS.map((dim) => (
+            {dimensions.map((dim) => (
               <span
                 key={dim}
                 className={`text-[9px] tabular-nums transition-colors ${

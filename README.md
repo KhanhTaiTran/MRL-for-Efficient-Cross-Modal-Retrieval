@@ -1,131 +1,98 @@
-# Enhancing Multimodal Retrieval with Matryoshka Representation Learning
+# AuraFind: MRL cross-modal retrieval
 
-This project is a pre-thesis prototype that explores how Matryoshka Representation Learning (MRL) can improve visual search and cross-modal retrieval for an e-commerce experience.
+The project combines a Next.js storefront, a Go gateway and a Python CLIP/FAISS service. Search is HTTP request/response. Phase 3 uses a durable PostgreSQL queue for background indexing; optional RabbitMQ is outside the search path.
 
-Instead of relying on a single fixed-size embedding, MRL makes it possible to use nested representations at multiple dimensions. That lets the system trade off speed and accuracy by truncating the embedding to smaller sizes without retraining the full pipeline.
+## Phase notes
 
-## Overview
+- [Phase -1 implementation and verification](notes/phase-minus1.md)
+- [Phase 0 infrastructure](notes/phase0.md)
+- [Phase 1 authentication and catalog](notes/phase1.md)
+- [Phase 2 cart, mock checkout and customer orders](notes/phase2.md)
+- [Phase 3 catalog administration and live index rebuilds](notes/phase3.md)
+- [Phase 4 verified-purchase reviews, moderation and wishlist](notes/phase4.md)
 
-The demo focuses on a "search by image" workflow for product discovery. A user uploads an image, the backend enqueues a retrieval task, and the worker processes that task to simulate MRL-based feature extraction.
+The storefront uses English. MRL controls and timing are developer tools, not shopping UI.
 
-The current implementation is a prototype, so the AI worker uses a mocked embedding extractor rather than a production MRL model. The repository is structured so the pipeline can later be replaced with a real vision encoder and vector database.
+Legacy dense text search and image search use two-stage retrieval: 50 image candidates at 64D, then cosine reranking at 512D. Query expansion (AQE) is disabled for both text and image search.
 
-## Tech Stack
+Storefront text search defaults to product-level hybrid with BM25 metadata matching,
+brand-family priority, RRF fusion, versioned lexical artifacts, and filtered
+catalog pagination. Legacy dense retrieval remains available. Storefront
+promotion passed the relevance gate and is controlled by `HYBRID_SEARCH_ENABLED`;
+see [hybrid search setup, contracts and evaluation](ai-worker/HYBRID_SEARCH.md).
 
-### Frontend
+## Real FashionGen demonstration
 
-- Next.js App Router
-- React
-- Tailwind CSS
-- Based on the Vercel Commerce template
+Use the existing local FashionGen corpus and trained MRL checkpoint with
+`.\infra\scripts\start_fashiongen.ps1 -Build` (subsequent starts omit `-Build`).
+This publishes 7,519 products / 32,528 original photographs to the SQL storefront
+and serves the verified MRL index at all six dimensions. Photos/descriptions are
+real dataset records; prices, inventory and payments remain explicitly simulated.
+See [deployment, verification and demo sequence](notes/fashiongen-demo.md).
 
-### Core API
+## Portable demo (Phase 0)
 
-- Go 1.22
-- Gin web framework
-- RabbitMQ message publishing
+Requirements: Docker Desktop with Linux containers, Docker Compose v2, Internet access on the first build/seed, and available host ports. No Shopify, SMTP provider or cloud account is required.
 
-### AI Worker
-
-- Python 3
-- FastAPI-compatible environment for future expansion
-- Pika for RabbitMQ consumption
-- PyTorch for embedding simulation and tensor operations
-
-### Infrastructure
-
-- Docker and Docker Compose
-- RabbitMQ as the message broker
-
-## Project Structure
-
-- `frontend/`: User-facing web application with the visual search interface.
-- `core-api/`: Go service that accepts upload requests and publishes retrieval tasks to RabbitMQ.
-- `ai-worker/`: Python worker that consumes search tasks and simulates MRL embedding extraction.
-- `docker-compose.yml`: Local orchestration for RabbitMQ, the API, and the worker.
-
-## Architecture
-
-1. The frontend sends an image and an MRL dimension to the core API.
-2. The core API validates the request and publishes a task to RabbitMQ.
-3. The AI worker consumes the task, extracts an embedding, and acknowledges the message.
-4. The prototype currently logs the result instead of writing to a vector database, but the worker is designed to support that next step.
-
-## Getting Started
-
-### Option 1: Run with Docker Compose
-
-Use Docker Compose to start the message broker, API, and worker together.
-
-```bash
-docker compose up --build
+```sh
+cp .env.example .env
+docker compose up -d --build
+docker compose ps -a
 ```
 
-Expected services:
+PowerShell: use `Copy-Item .env.example .env` for the first command. Do not overwrite an existing .env.
 
-- RabbitMQ Management UI: http://localhost:15672
-- Core API: http://localhost:8080
-- Frontend: http://localhost:3000
+Startup order is PostgreSQL -> versioned migration -> demo seed -> inference -> gateway -> frontend. Storage and local email run alongside this chain. Migration and seed containers should exit successfully; long-running services should remain running/healthy. The first build compiles MinIO from its official release source and installs CPU-only PyTorch. First seed downloads public CLIP weights and saves them in persistent volumes; it can take several minutes.
 
-### Option 2: Run the frontend locally
+- Storefront: http://localhost:3000
+- Gateway/config: http://localhost:8080/api/search/config
+- S3 endpoint: http://localhost:9000
+- Storage console: http://localhost:9001
+- Local email inbox: http://localhost:8025
 
-```bash
-cd frontend
-pnpm install
-pnpm dev
+If the existing native FashionGen app uses 3000/8080, stop those project processes first or set API_PORT, FRONTEND_PORT and NEXT_PUBLIC_API_URL together in .env. NEXT_PUBLIC_API_URL is baked into the frontend image, so rebuild frontend after changing it.
+
+The demo has ten locally generated clothing illustrations and fictional USD prices, clearly marked as demo records in PostgreSQL. It uses real public pretrained CLIP embeddings at 512D only. It is NOT the fine-tuned MRL benchmark or a copy of FashionGen. Phase 1 provides email-verified accounts, catalog browsing/product details and SQL prices in search results. Phase 2 adds persistent carts, mock checkout and private order history. Payment is simulated; no money is charged. Cart and checkout support USD demo products only.
+
+```sh
+docker compose logs seed migrate
+docker compose logs --tail 30 ai-worker core-api
+docker compose run --rm seed
 ```
 
-Then open http://localhost:3000.
+Use `/admin` for catalog management and live background index rebuilds (Phase 3). Rebuilds retain historical artifacts/mappings and activate without restarting search. Before the first managed rebuild, re-seeding is intended for stopped inference and replaces the seed demo index; restart inference afterward. Once a managed catalog index is active, seed exits without overwriting it.
 
-### Option 3: Run the core API locally
-
-```bash
-cd core-api
-go run ./cmd/server
+```sh
+docker compose stop ai-worker core-api frontend
+docker compose run --rm seed
+docker compose up -d ai-worker core-api frontend
 ```
 
-The API listens on port `8080` by default.
+Persistent volumes hold PostgreSQL, objects, model cache, demo images and indexes. `docker compose down` preserves data. Removing volumes explicitly destroys local state and is not part of routine startup.
 
-### Option 4: Run the AI worker locally
+Run infrastructure verification after the stack is ready:
 
-```bash
-cd ai-worker
-pip install -r requirements.txt
-python main.py
+```sh
+docker compose --profile tools run --rm --no-deps verify
 ```
 
-The worker connects to RabbitMQ and waits for image search tasks.
+To test on separate ports while native FashionGen is running, use `--env-file infra/test.env.example` on every Compose command. This uses storefront 13000, gateway 18080, PostgreSQL 15432, storage 19000/19001 and mail 11025/18025.
 
-## API
+Phase 3 runs `index-worker` by default and uses PostgreSQL as its durable background queue. RabbitMQ remains optional (`docker compose --profile jobs up -d rabbitmq`) and is not required for indexing or search.
 
-### Health Check
+## Current FashionGen research/local app
 
-- `GET /health`
+The full validation database (32,528 vectors, 7,519 product IDs) and trained checkpoints remain local; they are not committed or copied into demo images. Existing FashionGen artifacts are not modified by Compose's named volumes.
 
-Returns a simple status payload to confirm the service is running.
-
-### Enqueue Image Search Task
-
-- `POST /api/upload-image`
-
-Example request body:
-
-```json
-{
-  "image_base64": "...",
-  "mrl_dimension": 64
-}
+```powershell
+.\.venv\Scripts\python.exe ai-worker/manage.py start-local
+.\.venv\Scripts\python.exe ai-worker/manage.py test --e2e
 ```
 
-The endpoint returns `202 Accepted` when the task is successfully queued.
+This path uses `ai-worker/vector_db/index_meta.json` to select the matching dataset/checkpoint. Serving and index builds default to `mrl_fashiongen_best.pt`. On 6 November 2026, all 398 model tensors in best and latest were verified identical, and the cached FashionGen embeddings were checked against best before selecting it. Future checkpoint changes require matching, verified embeddings; changing a filename alone is insufficient. See the Phase -1 note for limitations and reproducibility checks.
 
-## Demo Features
+See [AI worker structure and commands](ai-worker/README.md) for API, training, extraction, benchmarks, scripts and tests. Configure FASHIONGEN_ROOT for your dataset. Earlier ViT-B/32 experiments and notebooks remain as research history, not production entry points.
 
-- Upload an image to simulate product search.
-- Adjust the embedding dimension to explore the MRL tradeoff between latency and accuracy.
-- Trace the full request path from frontend to queue to worker.
+## Attribution
 
-## References
-
-- Kusupati, A. et al. "Matryoshka Representation Learning." NeurIPS 2022. https://arxiv.org/abs/2205.13147
-- Original MRL repository: https://github.com/RAIVNLab/MRL
+Based on Matryoshka Representation Learning, Kusupati et al., NeurIPS 2022: https://arxiv.org/abs/2205.13147. Frontend started from Vercel Commerce; preserve frontend/license.md. MinIO is built from the official pinned source release under AGPL-3.0; its license is included in the image at /usr/share/doc/minio/LICENSE.

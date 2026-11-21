@@ -1,0 +1,843 @@
+{
+  "schema_version": 1,
+  "description": "English short-query evaluation. Proxy constraints are catalog-derived diagnostics, not independent relevance judgments. Full captions resolve deterministic product quantiles in the loaded snapshot.",
+  "queries": [
+    {
+      "id": "brand_01",
+      "query": "adidas",
+      "group": "brand",
+      "split": "dev",
+      "proxy": {
+        "brand_prefix": "adidas"
+      }
+    },
+    {
+      "id": "brand_02",
+      "query": "diesel",
+      "group": "brand",
+      "split": "test",
+      "proxy": {
+        "brand_prefix": "diesel"
+      }
+    },
+    {
+      "id": "brand_03",
+      "query": "gucci",
+      "group": "brand",
+      "split": "test",
+      "proxy": {
+        "brand_prefix": "gucci"
+      }
+    },
+    {
+      "id": "brand_04",
+      "query": "kenzo",
+      "group": "brand",
+      "split": "dev",
+      "proxy": {
+        "brand_prefix": "kenzo"
+      }
+    },
+    {
+      "id": "brand_05",
+      "query": "givenchy",
+      "group": "brand",
+      "split": "test",
+      "proxy": {
+        "brand_prefix": "givenchy"
+      }
+    },
+    {
+      "id": "brand_06",
+      "query": "acne studios",
+      "group": "brand",
+      "split": "test",
+      "proxy": {
+        "brand_prefix": "acne studios"
+      }
+    },
+    {
+      "id": "brand_07",
+      "query": "saint laurent",
+      "group": "brand",
+      "split": "dev",
+      "proxy": {
+        "brand_prefix": "saint laurent"
+      }
+    },
+    {
+      "id": "brand_08",
+      "query": "thom browne",
+      "group": "brand",
+      "split": "test",
+      "proxy": {
+        "brand_prefix": "thom browne"
+      }
+    },
+    {
+      "id": "brand_09",
+      "query": "rick owens",
+      "group": "brand",
+      "split": "test",
+      "proxy": {
+        "brand_prefix": "rick owens"
+      }
+    },
+    {
+      "id": "brand_10",
+      "query": "balmain",
+      "group": "brand",
+      "split": "dev",
+      "proxy": {
+        "brand_prefix": "balmain"
+      }
+    },
+    {
+      "id": "brand_attribute_01",
+      "query": "adidas jacket",
+      "group": "brand_attribute",
+      "split": "dev",
+      "proxy": {
+        "brand_prefix": "adidas",
+        "category_any": [
+          "JACKETS & COATS"
+        ]
+      }
+    },
+    {
+      "id": "brand_attribute_02",
+      "query": "diesel jeans",
+      "group": "brand_attribute",
+      "split": "test",
+      "proxy": {
+        "brand_prefix": "diesel",
+        "category_any": [
+          "JEANS"
+        ]
+      }
+    },
+    {
+      "id": "brand_attribute_03",
+      "query": "gucci bag",
+      "group": "brand_attribute",
+      "split": "test",
+      "proxy": {
+        "brand_prefix": "gucci",
+        "category_any": [
+          "SHOULDER BAGS",
+          "TOTE BAGS",
+          "BACKPACKS",
+          "CLUTCHES & POUCHES"
+        ]
+      }
+    },
+    {
+      "id": "brand_attribute_04",
+      "query": "kenzo sweatshirt",
+      "group": "brand_attribute",
+      "split": "dev",
+      "proxy": {
+        "brand_prefix": "kenzo",
+        "subcategory_any": [
+          "SWEATSHIRTS"
+        ]
+      }
+    },
+    {
+      "id": "brand_attribute_05",
+      "query": "givenchy t-shirt",
+      "group": "brand_attribute",
+      "split": "test",
+      "proxy": {
+        "brand_prefix": "givenchy",
+        "subcategory_any": [
+          "T-SHIRTS"
+        ]
+      }
+    },
+    {
+      "id": "brand_attribute_06",
+      "query": "acne studios jeans",
+      "group": "brand_attribute",
+      "split": "test",
+      "proxy": {
+        "brand_prefix": "acne studios",
+        "category_any": [
+          "JEANS"
+        ]
+      }
+    },
+    {
+      "id": "brand_attribute_07",
+      "query": "saint laurent boots",
+      "group": "brand_attribute",
+      "split": "dev",
+      "proxy": {
+        "brand_prefix": "saint laurent",
+        "category_any": [
+          "BOOTS"
+        ]
+      }
+    },
+    {
+      "id": "brand_attribute_08",
+      "query": "thom browne shirt",
+      "group": "brand_attribute",
+      "split": "test",
+      "proxy": {
+        "brand_prefix": "thom browne",
+        "category_any": [
+          "SHIRTS"
+        ],
+        "subcategory_any": [
+          "SHIRTS"
+        ]
+      }
+    },
+    {
+      "id": "brand_attribute_09",
+      "query": "rick owens sneakers",
+      "group": "brand_attribute",
+      "split": "test",
+      "proxy": {
+        "brand_prefix": "rick owens",
+        "category_any": [
+          "SNEAKERS"
+        ]
+      }
+    },
+    {
+      "id": "brand_attribute_10",
+      "query": "balmain blazer",
+      "group": "brand_attribute",
+      "split": "dev",
+      "proxy": {
+        "brand_prefix": "balmain",
+        "category_any": [
+          "SUITS & BLAZERS"
+        ],
+        "subcategory_any": [
+          "BLAZERS"
+        ]
+      }
+    },
+    {
+      "id": "category_01",
+      "query": "hoodie",
+      "group": "category",
+      "split": "dev",
+      "proxy": {
+        "subcategory_any": [
+          "HOODIES & ZIPUPS"
+        ]
+      }
+    },
+    {
+      "id": "category_02",
+      "query": "jacket",
+      "group": "category",
+      "split": "test",
+      "proxy": {
+        "category_any": [
+          "JACKETS & COATS"
+        ]
+      }
+    },
+    {
+      "id": "category_03",
+      "query": "jeans",
+      "group": "category",
+      "split": "test",
+      "proxy": {
+        "category_any": [
+          "JEANS"
+        ]
+      }
+    },
+    {
+      "id": "category_04",
+      "query": "sneakers",
+      "group": "category",
+      "split": "dev",
+      "proxy": {
+        "category_any": [
+          "SNEAKERS"
+        ]
+      }
+    },
+    {
+      "id": "category_05",
+      "query": "dress",
+      "group": "category",
+      "split": "test",
+      "proxy": {
+        "category_any": [
+          "DRESSES"
+        ]
+      }
+    },
+    {
+      "id": "category_06",
+      "query": "shirt",
+      "group": "category",
+      "split": "test",
+      "proxy": {
+        "category_any": [
+          "SHIRTS"
+        ],
+        "subcategory_any": [
+          "SHIRTS"
+        ]
+      }
+    },
+    {
+      "id": "category_07",
+      "query": "skirt",
+      "group": "category",
+      "split": "dev",
+      "proxy": {
+        "category_any": [
+          "SKIRTS"
+        ]
+      }
+    },
+    {
+      "id": "category_08",
+      "query": "shorts",
+      "group": "category",
+      "split": "test",
+      "proxy": {
+        "category_any": [
+          "SHORTS"
+        ]
+      }
+    },
+    {
+      "id": "category_09",
+      "query": "backpack",
+      "group": "category",
+      "split": "test",
+      "proxy": {
+        "category_any": [
+          "BACKPACKS"
+        ]
+      }
+    },
+    {
+      "id": "category_10",
+      "query": "sweater",
+      "group": "category",
+      "split": "test",
+      "proxy": {
+        "category_any": [
+          "SWEATERS"
+        ]
+      }
+    },
+    {
+      "id": "color_category_01",
+      "query": "black dress",
+      "group": "color_category",
+      "split": "dev",
+      "proxy": {
+        "category_any": [
+          "DRESSES"
+        ],
+        "terms": [
+          "black"
+        ]
+      }
+    },
+    {
+      "id": "color_category_02",
+      "query": "red dress",
+      "group": "color_category",
+      "split": "test",
+      "proxy": {
+        "category_any": [
+          "DRESSES"
+        ],
+        "terms": [
+          "red"
+        ]
+      }
+    },
+    {
+      "id": "color_category_03",
+      "query": "white shirt",
+      "group": "color_category",
+      "split": "test",
+      "proxy": {
+        "subcategory_any": [
+          "SHIRTS"
+        ],
+        "terms": [
+          "white"
+        ]
+      }
+    },
+    {
+      "id": "color_category_04",
+      "query": "black jeans",
+      "group": "color_category",
+      "split": "dev",
+      "proxy": {
+        "category_any": [
+          "JEANS"
+        ],
+        "terms": [
+          "black"
+        ]
+      }
+    },
+    {
+      "id": "color_category_05",
+      "query": "blue denim jacket",
+      "group": "color_category",
+      "split": "test",
+      "proxy": {
+        "subcategory_any": [
+          "DENIM JACKETS"
+        ],
+        "terms": [
+          "blue"
+        ]
+      }
+    },
+    {
+      "id": "color_category_06",
+      "query": "green parka",
+      "group": "color_category",
+      "split": "test",
+      "proxy": {
+        "category_any": [
+          "JACKETS & COATS"
+        ],
+        "terms": [
+          "green",
+          "parka"
+        ]
+      }
+    },
+    {
+      "id": "color_category_07",
+      "query": "pink sweater",
+      "group": "color_category",
+      "split": "dev",
+      "proxy": {
+        "category_any": [
+          "SWEATERS"
+        ],
+        "terms": [
+          "pink"
+        ]
+      }
+    },
+    {
+      "id": "color_category_08",
+      "query": "beige coat",
+      "group": "color_category",
+      "split": "test",
+      "proxy": {
+        "subcategory_any": [
+          "COATS"
+        ],
+        "terms": [
+          "beige"
+        ]
+      }
+    },
+    {
+      "id": "color_category_09",
+      "query": "brown leather bag",
+      "group": "color_category",
+      "split": "test",
+      "proxy": {
+        "category_any": [
+          "SHOULDER BAGS",
+          "TOTE BAGS",
+          "BACKPACKS"
+        ],
+        "terms": [
+          "brown",
+          "leather"
+        ]
+      }
+    },
+    {
+      "id": "color_category_10",
+      "query": "navy suit",
+      "group": "color_category",
+      "split": "test",
+      "proxy": {
+        "category_any": [
+          "SUITS & BLAZERS"
+        ],
+        "terms": [
+          "navy"
+        ]
+      }
+    },
+    {
+      "id": "material_category_01",
+      "query": "leather bag",
+      "group": "material_category",
+      "split": "dev",
+      "proxy": {
+        "category_any": [
+          "SHOULDER BAGS",
+          "TOTE BAGS",
+          "BACKPACKS"
+        ],
+        "terms": [
+          "leather"
+        ]
+      }
+    },
+    {
+      "id": "material_category_02",
+      "query": "denim jacket",
+      "group": "material_category",
+      "split": "test",
+      "proxy": {
+        "subcategory_any": [
+          "DENIM JACKETS"
+        ]
+      }
+    },
+    {
+      "id": "material_category_03",
+      "query": "cotton shirt",
+      "group": "material_category",
+      "split": "test",
+      "proxy": {
+        "subcategory_any": [
+          "SHIRTS"
+        ],
+        "terms": [
+          "cotton"
+        ]
+      }
+    },
+    {
+      "id": "material_category_04",
+      "query": "wool coat",
+      "group": "material_category",
+      "split": "dev",
+      "proxy": {
+        "subcategory_any": [
+          "COATS"
+        ],
+        "terms": [
+          "wool"
+        ]
+      }
+    },
+    {
+      "id": "material_category_05",
+      "query": "silk blouse",
+      "group": "material_category",
+      "split": "test",
+      "proxy": {
+        "subcategory_any": [
+          "BLOUSES"
+        ],
+        "terms": [
+          "silk"
+        ]
+      }
+    },
+    {
+      "id": "material_category_06",
+      "query": "cashmere sweater",
+      "group": "material_category",
+      "split": "test",
+      "proxy": {
+        "category_any": [
+          "SWEATERS"
+        ],
+        "terms": [
+          "cashmere"
+        ]
+      }
+    },
+    {
+      "id": "material_category_07",
+      "query": "suede boots",
+      "group": "material_category",
+      "split": "dev",
+      "proxy": {
+        "category_any": [
+          "BOOTS"
+        ],
+        "terms": [
+          "suede"
+        ]
+      }
+    },
+    {
+      "id": "material_category_08",
+      "query": "linen trousers",
+      "group": "material_category",
+      "split": "test",
+      "proxy": {
+        "subcategory_any": [
+          "TROUSERS"
+        ],
+        "terms": [
+          "linen"
+        ]
+      }
+    },
+    {
+      "id": "material_category_09",
+      "query": "velvet blazer",
+      "group": "material_category",
+      "split": "test",
+      "proxy": {
+        "subcategory_any": [
+          "BLAZERS"
+        ],
+        "terms": [
+          "velvet"
+        ]
+      }
+    },
+    {
+      "id": "material_category_10",
+      "query": "nylon backpack",
+      "group": "material_category",
+      "split": "test",
+      "proxy": {
+        "category_any": [
+          "BACKPACKS"
+        ],
+        "terms": [
+          "nylon"
+        ]
+      }
+    },
+    {
+      "id": "synonym_01",
+      "query": "trainers",
+      "group": "synonym",
+      "split": "dev",
+      "proxy": {
+        "category_any": [
+          "SNEAKERS"
+        ]
+      }
+    },
+    {
+      "id": "synonym_02",
+      "query": "tee shirt",
+      "group": "synonym",
+      "split": "test",
+      "proxy": {
+        "subcategory_any": [
+          "T-SHIRTS"
+        ]
+      }
+    },
+    {
+      "id": "synonym_03",
+      "query": "trousers",
+      "group": "synonym",
+      "split": "test",
+      "proxy": {
+        "subcategory_any": [
+          "TROUSERS"
+        ]
+      }
+    },
+    {
+      "id": "synonym_04",
+      "query": "pullover",
+      "group": "synonym",
+      "split": "dev",
+      "proxy": {
+        "subcategory_any": [
+          "CREWNECKS",
+          "SWEATSHIRTS",
+          "TURTLENECKS",
+          "V-NECKS"
+        ]
+      }
+    },
+    {
+      "id": "synonym_05",
+      "query": "purse",
+      "group": "synonym",
+      "split": "test",
+      "proxy": {
+        "category_any": [
+          "SHOULDER BAGS",
+          "CLUTCHES & POUCHES"
+        ]
+      }
+    },
+    {
+      "id": "synonym_06",
+      "query": "zip up hoodie",
+      "group": "synonym",
+      "split": "test",
+      "proxy": {
+        "subcategory_any": [
+          "HOODIES & ZIPUPS"
+        ]
+      }
+    },
+    {
+      "id": "synonym_07",
+      "query": "running shoes",
+      "group": "synonym",
+      "split": "dev",
+      "proxy": {
+        "category_any": [
+          "SNEAKERS"
+        ]
+      }
+    },
+    {
+      "id": "synonym_08",
+      "query": "biker jacket",
+      "group": "synonym",
+      "split": "test",
+      "proxy": {
+        "subcategory_any": [
+          "LEATHER JACKETS"
+        ],
+        "terms": [
+          "biker"
+        ]
+      }
+    },
+    {
+      "id": "synonym_09",
+      "query": "puffer jacket",
+      "group": "synonym",
+      "split": "test",
+      "proxy": {
+        "subcategory_any": [
+          "DOWN"
+        ]
+      }
+    },
+    {
+      "id": "synonym_10",
+      "query": "ankle boot",
+      "group": "synonym",
+      "split": "test",
+      "proxy": {
+        "subcategory_any": [
+          "ANKLE BOOTS"
+        ]
+      }
+    },
+    {
+      "id": "full_caption_01",
+      "group": "full_caption",
+      "split": "control",
+      "caption_fraction": 0
+    },
+    {
+      "id": "full_caption_02",
+      "group": "full_caption",
+      "split": "control",
+      "caption_fraction": 0.1111111111111111
+    },
+    {
+      "id": "full_caption_03",
+      "group": "full_caption",
+      "split": "control",
+      "caption_fraction": 0.2222222222222222
+    },
+    {
+      "id": "full_caption_04",
+      "group": "full_caption",
+      "split": "control",
+      "caption_fraction": 0.3333333333333333
+    },
+    {
+      "id": "full_caption_05",
+      "group": "full_caption",
+      "split": "control",
+      "caption_fraction": 0.4444444444444444
+    },
+    {
+      "id": "full_caption_06",
+      "group": "full_caption",
+      "split": "control",
+      "caption_fraction": 0.5555555555555556
+    },
+    {
+      "id": "full_caption_07",
+      "group": "full_caption",
+      "split": "control",
+      "caption_fraction": 0.6666666666666666
+    },
+    {
+      "id": "full_caption_08",
+      "group": "full_caption",
+      "split": "control",
+      "caption_fraction": 0.7777777777777778
+    },
+    {
+      "id": "full_caption_09",
+      "group": "full_caption",
+      "split": "control",
+      "caption_fraction": 0.8888888888888888
+    },
+    {
+      "id": "full_caption_10",
+      "group": "full_caption",
+      "split": "control",
+      "caption_fraction": 1
+    },
+    {
+      "id": "unknown_1",
+      "query": "nike",
+      "group": "unknown",
+      "split": "diagnostic",
+      "proxy": {
+        "no_relevant": true
+      }
+    },
+    {
+      "id": "unknown_2",
+      "query": "qwertyzxv",
+      "group": "unknown",
+      "split": "diagnostic",
+      "proxy": {
+        "no_relevant": true
+      }
+    },
+    {
+      "id": "unknown_3",
+      "query": "zzznotacatalogbrand",
+      "group": "unknown",
+      "split": "diagnostic",
+      "proxy": {
+        "no_relevant": true
+      }
+    },
+    {
+      "id": "unknown_4",
+      "query": "unobtanium waistcoat",
+      "group": "unknown",
+      "split": "diagnostic",
+      "proxy": {
+        "no_relevant": true
+      }
+    },
+    {
+      "id": "unknown_5",
+      "query": "hypergalactic nanofiber",
+      "group": "unknown",
+      "split": "diagnostic",
+      "proxy": {
+        "no_relevant": true
+      }
+    }
+  ]
+}

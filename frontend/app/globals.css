@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 @plugin "@tailwindcss/container-queries";
 @plugin "@tailwindcss/typography";
@@ -13,9 +14,62 @@
   }
 }
 
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
+html {
+  color-scheme: light;
+  scroll-padding-top: 9rem;
+}
+html.dark {
+  color-scheme: dark;
+}
+body {
+  font-family: var(--font-geist-sans), Arial, sans-serif;
+}
+button:not(:disabled),
+select,
+summary {
+  cursor: pointer;
+}
+button,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+.site-container {
+  @apply mx-auto w-full max-w-[1440px] px-4 sm:px-6 lg:px-8;
+}
+.eyebrow {
+  @apply text-xs font-medium tracking-[0.14em] uppercase text-neutral-500 dark:text-neutral-400;
+}
+.ui-input {
+  @apply w-full min-w-0 rounded-lg border border-neutral-300 bg-white px-3 py-2.5 text-base text-neutral-900 placeholder:text-neutral-400 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-100;
+}
+.ui-button {
+  @apply min-h-11 items-center justify-center gap-2 rounded-lg bg-neutral-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200;
+}
+select,
+option {
+  @apply bg-white text-neutral-900 dark:bg-neutral-900 dark:text-neutral-100;
+}
+input,
+textarea,
+select {
+  max-width: 100%;
+}
+@media (max-width: 639px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
@@ -27,7 +81,10 @@
 
 a,
 input,
-button {
+button,
+select,
+textarea,
+summary {
   @apply focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-neutral-400 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-50 dark:focus-visible:ring-neutral-600 dark:focus-visible:ring-offset-neutral-900;
 }
 

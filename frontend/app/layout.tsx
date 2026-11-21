@@ -2,8 +2,13 @@ import { GeistSans } from "geist/font/sans";
 import { ReactNode } from "react";
 import { Toaster } from "sonner";
 import "./globals.css";
+import { AuthProvider } from "components/auth/auth-provider";
+import { baseUrl } from "lib/utils";
+import { SiteShell } from "components/layout/site-shell";
+import { themeScript } from "lib/theme-script";
 
 export const metadata = {
+  metadataBase: new URL(baseUrl),
   title: {
     default: "AuraFind",
     template: "%s | AuraFind",
@@ -18,9 +23,14 @@ export const metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className={GeistSans.variable}>
+    <html lang="en" className={GeistSans.variable} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body className="bg-neutral-50 text-neutral-900 antialiased dark:bg-neutral-950 dark:text-white">
-        <main>{children}</main>
+        <AuthProvider>
+          <SiteShell>{children}</SiteShell>
+        </AuthProvider>
         <Toaster
           closeButton
           toastOptions={{

@@ -1,7 +1,9 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { Plus, Sparkles } from "lucide-react";
+import { ArrowUpRight, Sparkles, Star } from "lucide-react";
+import Link from "next/link";
+import { displayText } from "lib/display-text";
 import { useEffect, useState } from "react";
 import { getImageUrl, type EnrichedProduct } from "./types";
 
@@ -9,7 +11,6 @@ interface ProductCardProps {
   product: EnrichedProduct;
   index: number;
   onFindSimilar: (product: EnrichedProduct) => void;
-  onAddToCart: () => void;
   isScanning?: boolean;
 }
 
@@ -31,13 +32,15 @@ export function ProductCard({
   product,
   index,
   onFindSimilar,
-  onAddToCart,
   isScanning = false,
 }: ProductCardProps) {
   const [isHovered, setIsHovered] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
+  const name = displayText(product.displayName);
+  const brand = displayText(product.displayBrand);
   const isDesktop = useIsDesktopHover();
 
-  const showQuickAdd = isDesktop ? isHovered : true;
+  const showQuickAdd = isDesktop ? isHovered || isFocused : true;
   const imageScale = isDesktop && isHovered ? 1.06 : 1;
 
   return (
@@ -47,23 +50,29 @@ export function ProductCard({
       animate={{ opacity: 1, y: 0 }}
       transition={{
         duration: 0.45,
-        delay: index * 0.06,
+        delay: Math.min(index, 6) * 0.04,
         ease: [0.22, 1, 0.36, 1],
       }}
       onMouseEnter={() => isDesktop && setIsHovered(true)}
       onMouseLeave={() => isDesktop && setIsHovered(false)}
-      className="group relative"
+      onFocus={() => setIsFocused(true)}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget))
+          setIsFocused(false);
+      }}
+      className="group relative min-w-0"
     >
       <div className="relative overflow-hidden rounded-2xl bg-neutral-100 dark:bg-neutral-900">
         <div className="relative aspect-[3/4] overflow-hidden">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <motion.img
-            src={getImageUrl(product.product_id)}
-            alt={product.caption}
+            src={product.image_url || getImageUrl(product.product_id)}
+            alt={name}
+            crossOrigin="anonymous"
             loading="lazy"
             animate={{ scale: imageScale }}
             transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-            className="h-full w-full object-cover"
+            className="h-full w-full bg-white object-contain"
           />
 
           {isScanning && (
@@ -85,10 +94,6 @@ export function ProductCard({
             </motion.div>
           )}
 
-          <span className="absolute bottom-2 left-2 rounded-full border border-white/20 bg-black/45 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-white backdrop-blur-md sm:bottom-3 sm:left-3 sm:px-2.5 sm:py-1 sm:text-[11px]">
-            {product.matchScore}% Match
-          </span>
-
           <button
             type="button"
             onClick={() => onFindSimilar(product)}
@@ -100,31 +105,84 @@ export function ProductCard({
             <span className="sm:hidden">Similar</span>
           </button>
 
-          <motion.div
-            initial={false}
-            animate={{ y: showQuickAdd ? 0 : "100%" }}
-            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute inset-x-0 bottom-0 p-2 sm:p-3"
-          >
-            <button
-              type="button"
-              onClick={onAddToCart}
-              className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-neutral-900 py-2 text-[10px] font-semibold uppercase tracking-wider text-white transition-colors active:bg-neutral-700 sm:gap-2 sm:py-2.5 sm:text-xs lg:hover:bg-neutral-800 dark:bg-white dark:text-neutral-900 dark:active:bg-neutral-200 lg:dark:hover:bg-neutral-100"
+          {product.handle && (
+            <motion.div
+              initial={false}
+              animate={{ y: showQuickAdd ? 0 : "100%" }}
+              transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+              className="absolute inset-x-0 bottom-0 p-2 group-focus-within:translate-y-0 sm:p-3"
             >
-              <Plus className="h-3.5 w-3.5" />
-              Quick Add
-            </button>
-          </motion.div>
+              <Link
+                href={`/product/${product.handle}`}
+                className="flex w-full items-center justify-center gap-1.5 rounded-xl bg-neutral-900 py-2 text-[10px] font-semibold uppercase tracking-wider text-white transition-colors active:bg-neutral-700 sm:gap-2 sm:py-2.5 sm:text-xs lg:hover:bg-neutral-800 dark:bg-white dark:text-neutral-900 dark:active:bg-neutral-200 lg:dark:hover:bg-neutral-100"
+              >
+                <ArrowUpRight className="h-3.5 w-3.5" />
+                View product
+              </Link>
+            </motion.div>
+          )}
         </div>
       </div>
 
-      <div className="mt-2 px-0.5 sm:mt-3 sm:px-1">
-        <h3 className="line-clamp-2 text-xs font-medium text-neutral-900 sm:text-sm dark:text-white">
-          {product.caption}
+      <div className="space-y-2 px-0.5 pb-1 pt-3 sm:px-1">
+        {product.displayBrand && (
+          <p className="truncate text-xs font-medium text-neutral-500 dark:text-neutral-400">
+            {brand}
+          </p>
+        )}
+        <h3
+          title={name}
+          className="line-clamp-2 min-h-10 break-words text-sm font-medium leading-5 text-neutral-900 dark:text-white"
+        >
+          {product.handle ? (
+            <Link
+              href={`/product/${product.handle}`}
+              className="hover:underline"
+            >
+              {name}
+            </Link>
+          ) : (
+            product.displayName
+          )}
         </h3>
-        <p className="mt-0.5 text-xs tabular-nums text-neutral-500 sm:text-sm">
-          {product.price}
-        </p>
+        {product.ratingAverage !== null ? (
+          <div
+            className="flex flex-wrap items-center gap-1.5 text-xs"
+            aria-label={`${product.ratingAverage} out of 5 stars, ${product.reviewCount} reviews`}
+          >
+            <span className="flex gap-0.5 text-amber-500" aria-hidden="true">
+              {Array.from({ length: 5 }, (_, i) => (
+                <span key={i} className="relative block h-3.5 w-3.5">
+                  <Star className="h-3.5 w-3.5" />
+                  <span
+                    className="absolute inset-y-0 left-0 overflow-hidden"
+                    style={{
+                      width: `${Math.max(0, Math.min(1, product.ratingAverage! - i)) * 100}%`,
+                    }}
+                  >
+                    <Star className="h-3.5 w-3.5 fill-current" />
+                  </span>
+                </span>
+              ))}
+            </span>
+            <span className="tabular-nums text-neutral-600 dark:text-neutral-300">
+              {product.ratingAverage.toFixed(1)} ({product.reviewCount})
+            </span>
+          </div>
+        ) : (
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">
+            No reviews yet
+          </p>
+        )}
+        {product.displayPrice ? (
+          <p className="text-base font-semibold tabular-nums tracking-tight text-neutral-900 sm:text-lg dark:text-white">
+            {product.displayPrice}
+          </p>
+        ) : (
+          <p className="text-sm font-medium text-neutral-500 dark:text-neutral-400">
+            Price unavailable
+          </p>
+        )}
       </div>
     </motion.article>
   );

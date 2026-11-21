@@ -2,191 +2,172 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"io"
 	"log"
 	"net/http"
-	"strconv"
+	"os"
+	"strings"
 	"time"
 
+	"core-api/internal/admin"
+	"core-api/internal/api"
+	"core-api/internal/auth"
+	"core-api/internal/broker"
+	"core-api/internal/catalog"
+	"core-api/internal/commerce"
+	searchservice "core-api/internal/search"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
-	amqp "github.com/rabbitmq/amqp091-go"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
-var supportedMRLDimensions = map[int]struct{}{
-	8:   {},
-	16:  {},
-	32:  {},
-	64:  {},
-	128: {},
-	256: {},
-	512: {},
-}
-
-func failOnError(err error, msg string) {
-	if err != nil {
-		log.Panicf("%s: %s", msg, err)
-	}
-}
-
 func main() {
-	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
-	failOnError(err, "Can't connect to RabbitMQ")
-	defer conn.Close()
+	var db *pgxpool.Pool
+	if databaseURL := os.Getenv("DATABASE_URL"); databaseURL != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		var err error
+		db, err = pgxpool.New(ctx, databaseURL)
+		if err == nil {
+			err = db.Ping(ctx)
+		}
+		cancel()
+		if err != nil {
+			log.Fatal("Database unavailable: ", err)
+		}
+		defer db.Close()
+	}
 
-	ch, err := conn.Channel()
-	failOnError(err, "Can't open channel")
-	defer ch.Close()
+	inferAPIURL := os.Getenv("INFER_API_URL")
+	if inferAPIURL == "" {
+		inferAPIURL = "http://localhost:8001"
+	}
 
-	q, err := ch.QueueDeclare(
-		"",
-		false,
-		false,
-		true,
-		false,
-		nil,
-	)
-	failOnError(err, "Can't declare reply queue")
+	inferTimeoutStr := os.Getenv("INFER_TIMEOUT")
+	inferTimeout := 15 * time.Second
+	if inferTimeoutStr != "" {
+		if d, err := time.ParseDuration(inferTimeoutStr); err == nil {
+			inferTimeout = d
+		}
+	}
 
-	msgs, err := ch.Consume(
-		q.Name,
-		"",
-		true,
-		false,
-		false,
-		false,
-		nil,
-	)
-	failOnError(err, "Can't register consumer")
+	imgBaseDir := os.Getenv("IMG_BASE_DIR")
+	if imgBaseDir == "" {
+		imgBaseDir = "./data/sample_images"
+	}
 
-	// Router and CORS Config
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	// Initialize HTTP client to Python inference service
+	inferClient := broker.NewInferClient(inferAPIURL, inferTimeout)
+
+	// Router and CORS Configuration
+	origins := strings.Split(os.Getenv("CORS_ORIGINS"), ",")
+	if len(origins) == 1 && origins[0] == "" {
+		origins = []string{"http://localhost:3000", "http://127.0.0.1:3000"}
+	}
 	r := gin.Default()
+	r.SetTrustedProxies(nil)
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000"},
+		AllowOrigins:     origins,
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Accept"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "Idempotency-Key"},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
 		MaxAge:           12 * time.Hour,
 	}))
 
-	// static file server (using for display the images from other directory)
-	r.Static("/images", "D:/Pre-thesis/Thesis Dataset-20260617T002927Z-3-002/Thesis Dataset/data_images")
+	// Ensure Vary: Origin header
+	r.Use(func(c *gin.Context) {
+		c.Header("Vary", "Origin")
+		c.Next()
+	})
 
-	// Helper function for common RabbitMQ Publish & Wait logic
-	publishAndWait := func(c *gin.Context, body []byte, contentType string, searchType string, mrlDimension int, requestStartedAt time.Time) {
-		corrID := uuid.New().String()
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second) // Increased timeout for 22k search
+	// Static images server
+	r.Static("/images", imgBaseDir)
+
+	// Health check
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "ok",
+			"service": "core-api",
+		})
+	})
+
+	r.GET("/health/live", func(c *gin.Context) { c.JSON(200, gin.H{"status": "ok"}) })
+	r.GET("/health/ready", func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 3*time.Second)
 		defer cancel()
-
-		err = ch.PublishWithContext(ctx,
-			"",
-			"search_queue",
-			false,
-			false,
-			amqp.Publishing{
-				ContentType:   contentType,
-				CorrelationId: corrID,
-				ReplyTo:       q.Name,
-				Headers: amqp.Table{
-					"mrl_dimension": int32(mrlDimension),
-					"search_type":   searchType,
-				},
-				Body: body,
-			},
-		)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error publishing message to worker"})
-			return
-		}
-
-		for d := range msgs {
-			if d.CorrelationId != corrID {
-				continue
-			}
-
-			var payload map[string]any
-			if err := json.Unmarshal(d.Body, &payload); err != nil {
-				c.Data(http.StatusOK, "application/json", d.Body)
+		if db != nil {
+			if err := db.Ping(ctx); err != nil {
+				c.JSON(503, gin.H{"status": "not_ready", "dependency": "database"})
 				return
 			}
+		}
+		health, err := inferClient.Health(ctx)
+		if err != nil || health["model_loaded"] != true || health["index_loaded"] != true {
+			c.JSON(503, gin.H{"status": "not_ready", "dependency": "inference"})
+			return
+		}
+		c.JSON(200, gin.H{"status": "ok", "database_configured": db != nil})
+	})
 
-			payload["mrl_dimension"] = mrlDimension
-			payload["request_latency_ms"] = time.Since(requestStartedAt).Milliseconds()
-
-			responseBody, err := json.Marshal(payload)
+	// Register API Routes
+	apiGroup := r.Group("/api")
+	textSearch := searchservice.NewService(inferClient, nil)
+	searchHandler := api.NewSearchHandler(inferClient).WithSearchService(textSearch)
+	if db != nil {
+		mediaBase := os.Getenv("PUBLIC_MEDIA_BASE_URL")
+		if mediaBase == "" {
+			mediaBase = "http://localhost:9000/products"
+		}
+		repo := &catalog.Repository{DB: db, MediaBase: mediaBase}
+		api.NewProductHandler(repo).WithSearchService(textSearch).RegisterRoutes(apiGroup)
+		searchHandler.WithCatalog(repo)
+		value := func(key, fallback string) string {
+			if v := os.Getenv(key); v != "" {
+				return v
+			}
+			return fallback
+		}
+		authHandler, err := api.NewAuthHandler(db, os.Getenv("JWT_SECRET"), os.Getenv("COOKIE_SECURE") == "true", origins, auth.Mailer{
+			Host: value("SMTP_HOST", "localhost"), Port: value("SMTP_PORT", "1025"), From: value("SMTP_FROM", "AuraFind <noreply@aurafind.local>"), Username: os.Getenv("SMTP_USERNAME"), Password: os.Getenv("SMTP_PASSWORD"),
+		})
+		if err != nil {
+			log.Fatal(err)
+		}
+		authHandler.RegisterRoutes(apiGroup)
+		api.NewEngagementHandler(db, mediaBase).RegisterRoutes(apiGroup, authHandler)
+		var store *minio.Client
+		if endpoint := os.Getenv("MINIO_ENDPOINT"); endpoint != "" {
+			store, err = minio.New(endpoint, &minio.Options{Creds: credentials.NewStaticV4(os.Getenv("MINIO_ACCESS_KEY"), os.Getenv("MINIO_SECRET_KEY"), ""), Secure: os.Getenv("MINIO_SECURE") == "true"})
 			if err != nil {
-				c.Data(http.StatusOK, "application/json", d.Body)
-				return
+				log.Fatal(err)
 			}
-
-			c.Data(http.StatusOK, "application/json", responseBody)
-			return
 		}
-
-		c.JSON(http.StatusRequestTimeout, gin.H{"error": "Timed out waiting for search results from worker"})
+		api.NewAdminHandler(&admin.Repository{DB: db, MediaBase: mediaBase}, store).RegisterRoutes(apiGroup, authHandler)
+		api.NewCommerceHandler(&commerce.Repository{DB: db, MediaBase: mediaBase}).RegisterRoutes(apiGroup, authHandler)
+	} else {
+		apiGroup.Any("/products", func(c *gin.Context) { c.JSON(503, gin.H{"error": "Catalog requires DATABASE_URL"}) })
+		apiGroup.Any("/products/*path", func(c *gin.Context) { c.JSON(503, gin.H{"error": "Catalog requires DATABASE_URL"}) })
+		apiGroup.Any("/auth/*path", func(c *gin.Context) { c.JSON(503, gin.H{"error": "Accounts require DATABASE_URL"}) })
+		apiGroup.Any("/admin/*path", func(c *gin.Context) { c.JSON(503, gin.H{"error": "Administration requires DATABASE_URL"}) })
+		apiGroup.Any("/wishlist", func(c *gin.Context) { c.JSON(503, gin.H{"error": "Saved items require DATABASE_URL"}) })
+		apiGroup.Any("/wishlist/*path", func(c *gin.Context) { c.JSON(503, gin.H{"error": "Saved items require DATABASE_URL"}) })
+		for _, path := range []string{"/cart", "/cart/*path", "/checkout", "/orders", "/orders/*path"} {
+			apiGroup.Any(path, func(c *gin.Context) {
+				c.JSON(503, gin.H{"error": "Shopping requires DATABASE_URL", "code": "service_unavailable"})
+			})
+		}
 	}
+	searchHandler.RegisterRoutes(apiGroup)
 
-	// 1. Image-to-Image Search API
-	r.POST("/api/search/image", func(c *gin.Context) {
-		requestStartedAt := time.Now()
-
-		file, _, err := c.Request.FormFile("image")
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Please upload an image with key 'image'"})
-			return
-		}
-		defer file.Close()
-
-		dimensionValue := c.Request.FormValue("mrl_dimension")
-		mrlDimension, err := strconv.Atoi(dimensionValue)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Please provide a valid mrl_dimension"})
-			return
-		}
-		if _, ok := supportedMRLDimensions[mrlDimension]; !ok {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported mrl_dimension. Use 8, 16, 32, 64, 128, 256, or 512."})
-			return
-		}
-
-		imageBytes, err := io.ReadAll(file)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Cannot read image file"})
-			return
-		}
-
-		publishAndWait(c, imageBytes, "image/jpeg", "image", mrlDimension, requestStartedAt)
-	})
-
-	// 2. Text-to-Image Search API
-	r.POST("/api/search/text", func(c *gin.Context) {
-		requestStartedAt := time.Now()
-
-		query := c.Request.FormValue("query")
-		if query == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Please provide a search text with key 'query'"})
-			return
-		}
-
-		dimensionValue := c.Request.FormValue("mrl_dimension")
-		mrlDimension, err := strconv.Atoi(dimensionValue)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Please provide a valid mrl_dimension"})
-			return
-		}
-		if _, ok := supportedMRLDimensions[mrlDimension]; !ok {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported mrl_dimension. Use 8, 16, 32, 64, 128, 256, or 512."})
-			return
-		}
-
-		textBytes := []byte(query)
-		publishAndWait(c, textBytes, "text/plain", "text", mrlDimension, requestStartedAt)
-	})
-
-	log.Println("Core API is running at http://localhost:8080")
-	if err := r.Run(":8080"); err != nil {
-		log.Fatal(err)
+	log.Printf("[*] Core API server running on :%s (Infer API: %s)", port, inferAPIURL)
+	server := &http.Server{Addr: ":" + port, Handler: r, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 35 * time.Second, IdleTimeout: 60 * time.Second}
+	if err := server.ListenAndServe(); err != nil {
+		log.Fatalf("Server startup failed: %v", err)
 	}
 }

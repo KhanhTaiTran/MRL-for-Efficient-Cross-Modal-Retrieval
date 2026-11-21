@@ -17,16 +17,12 @@ async function parseSearchResponse(
 
   if (!response.ok) {
     throw new Error(
-      payload.error ??
-        payload.message ??
-        `Request failed (${response.status})`,
+      payload.error ?? payload.message ?? `Request failed (${response.status})`,
     );
   }
 
   if (payload.status !== "success" || !Array.isArray(payload.data)) {
-    throw new Error(
-      payload.message ?? "Search returned an unexpected result.",
-    );
+    throw new Error(payload.message ?? "Search returned an unexpected result.");
   }
 
   return payload;
@@ -35,14 +31,19 @@ async function parseSearchResponse(
 export async function searchByText(
   query: string,
   mrlDimension: number,
+  searchMode: "direct" | "adaptive" = "direct",
+  retrievalMode: "dense" | "hybrid" = "dense",
 ): Promise<SearchResponse> {
   const formData = new FormData();
   formData.append("query", query.trim());
+  formData.append("retrieval_mode", retrievalMode);
   formData.append("mrl_dimension", String(mrlDimension));
+  formData.append("search_mode", searchMode);
 
   const response = await fetch(`${API_BASE_URL}/api/search/text`, {
     method: "POST",
     body: formData,
+    signal: AbortSignal.timeout(20000),
   });
 
   return parseSearchResponse(response);
@@ -51,37 +52,64 @@ export async function searchByText(
 export async function searchByImage(
   image: File,
   mrlDimension: number,
+  searchMode: "direct" | "adaptive" = "direct",
 ): Promise<SearchResponse> {
   const formData = new FormData();
   formData.append("image", image);
   formData.append("mrl_dimension", String(mrlDimension));
+  formData.append("search_mode", searchMode);
 
   const response = await fetch(`${API_BASE_URL}/api/search/image`, {
     method: "POST",
     body: formData,
+    signal: AbortSignal.timeout(20000),
   });
 
   return parseSearchResponse(response);
 }
 
+export async function fetchSearchConfig(signal?: AbortSignal): Promise<{
+  supported_dims: number[];
+  active_index_version: string;
+  default_dim: number;
+  text_retrieval_mode_default?: "dense" | "hybrid";
+  supported_retrieval_modes?: ("dense" | "hybrid")[];
+  lexical_available?: boolean;
+  catalog_source?: string;
+  num_products?: number;
+  num_vectors?: number;
+  model_kind?: string;
+  commerce_data_note?: string;
+}> {
+  const response = await fetch(`${API_BASE_URL}/api/search/config`, { signal });
+  if (!response.ok) {
+    throw new Error("Failed to fetch search configuration");
+  }
+  return response.json();
+}
+
 export async function fetchProductImageAsFile(
   productId: string,
+  imageUrl?: string,
+  filename = productId,
 ): Promise<File> {
-  const response = await fetch(`${API_BASE_URL}/images/${productId}`);
+  const response = await fetch(
+    imageUrl || `${API_BASE_URL}/images/${productId}`,
+  );
 
   if (!response.ok) {
     throw new Error("Could not load product image for similar search.");
   }
 
   const blob = await response.blob();
-  return new File([blob], productId, {
+  return new File([blob], filename, {
     type: blob.type || "image/jpeg",
   });
 }
 
 export function getSearchErrorMessage(err: unknown): string {
   if (err instanceof TypeError) {
-    return "Cannot reach the search backend. Is it running on localhost:8080?";
+    return "Search is unavailable right now. Please try again.";
   }
   if (err instanceof Error) {
     return err.message;
